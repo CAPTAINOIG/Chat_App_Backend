@@ -19,13 +19,13 @@ const server = http.createServer(app);
 
 const io = new Server(server, {
     cors: {
-        origin: "https://chat-app-backend-seuk.onrender.com", // Your frontend URL
+        origin: "*", // Your frontend URL
         methods: ["GET", "POST"]
     }
 });
 
 app.use(cors({
-    origin: "https://chat-app-backend-seuk.onrender.com", // Your frontend URL
+    origin: "*", // Your frontend URL
     methods: ["GET", "POST"],
     credentials: true
 }));
