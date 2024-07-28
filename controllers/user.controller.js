@@ -3,13 +3,10 @@ let Message = require('../models/message.model')
 const dotenv = require('dotenv')
 const jwt = require("jsonwebtoken")
 const nodemailer = require ('nodemailer')
-// const bcryptjs = require('bcryptjs')
-// const Message = require('../models/messageModel');
-
 const http = require('http');
 const socketIo = require('socket.io');
 const mongoose = require('mongoose');
-// const Message = require('./models/Message');
+
 
 dotenv.config();
 
