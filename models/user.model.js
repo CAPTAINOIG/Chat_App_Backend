@@ -42,8 +42,8 @@ userSchema.pre('save', function(next){
 
 
 userSchema.methods.validatePassword = function(password, callback){
-    console.log(password, 'the hashed one');
-    console.log(this);
+    // console.log(password, 'the hashed one');
+    // console.log(this);
     bcrypt.compare(password,this.password,(err,same)=>{
         console.log(same);
         if(!err){

@@ -76,15 +76,16 @@ const registerUser = (req, res) => {
     const { password, email } = req.body;
     try {
       const user = await User.findOne({ email });
-  
+      // email checking
       if (user) {
+        // then password here
         const secrete = process.env.SECRET;
         user.validatePassword(password, (err, same) => {
           if (err) {
             res.status(500).json({ message: "Server error", status: false });
           } else {
             if (same) {
-              const token = jwt.sign({ email }, secrete, { expiresIn: "10h" });
+              const token = jwt.sign({ email }, secrete, { expiresIn: "12h" });
               console.log(token);
               res.status(200).json({ message: "User signed in successfully", status: true, token, user });
             } else {
@@ -92,7 +93,9 @@ const registerUser = (req, res) => {
             }
           }
         });
-      } else {
+      }
+      // To check for email validation
+       else {
         res.status(404).json({ message: "Wrong email, please type the correct email", status: false });
       }
     } catch (err) {
@@ -101,26 +104,66 @@ const registerUser = (req, res) => {
     }
   }
 
-  const getDashboard = (req, res) => {
-    let token = (req.headers.authorization.split(" ")[1]);
-    const secrete = process.env.SECRET;
-    jwt.verify(token, secrete, (err, result) => {
+  // const getDashboard = (req, res) => {
+  //   let token = (req.headers.authorization.split(" ")[1]);
+  //   const secrete = process.env.SECRET;
+  //   jwt.verify(token, secrete, (err, result) => {
+  //     if (err) {
+  //       console.log(err);
+  //       res.send({ message: "Error Occured", status: false })
+  //     }
   
-      if (err) {
-        console.log(err);
-        res.send({ message: "Error Occured", status: false })
+  //     else {
+  //       const userDetail = await User.findOne({ email: result.email });
+  //     if (!userDetail) {
+  //       return res.status(404).json({ message: 'User not found', status: false });
+  //     }
+  //     // Respond with user details
+  //     res.json({ message: 'Congratulations', status: true, userDetail });
+  
+  //   } catch (err) {
+  //     console.error('Error occurred:', err);
+  //     res.status(500).json({ message: 'Internal Server Error', status: false });
+  //   }
+  //     }
+  //   })
+  
+
+
+  const getDashboard = async (req, res) => {
+    try {
+      // Extract token from Authorization header
+      const authHeader = req.headers.authorization;
+      if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ message: 'Authorization token missing or malformed', status: false });
       }
   
-      else {
-        User.findOne({ email: result.email })
-          .then((userDetail) => {
-            // console.log(userDetail);
-            res.send({ message: "Congratulations", status: true, userDetail })
+      const token = authHeader.split(' ')[1];
+      const secret = process.env.SECRET;
   
-          })
+      // Verify token
+      const decoded = await new Promise((resolve, reject) => {
+        jwt.verify(token, secret, (err, result) => {
+          if (err) return reject(err);
+          resolve(result);
+        });
+      });
+  
+      // Find user by email from token
+      const userDetail = await User.findOne({ email: decoded.email });
+      if (!userDetail) {
+        return res.status(404).json({ message: 'User not found', status: false });
       }
-    })
-  }
+  
+      // Respond with user details
+      res.json({ message: 'Congratulations', status: true, userDetail });
+  
+    } catch (err) {
+      console.error('Error occurred:', err);
+      res.status(500).json({ message: 'Internal Server Error', status: false });
+    }
+  };
+  
 
   // we fetch all the users here
 // we use emit to send msg to the client side instead of res.send
@@ -142,23 +185,6 @@ const registerUser = (req, res) => {
     })
     })
   }
-
-  // user create msg and send it then save on database
-  // const createMessage = async (req, res) => {
-  //     try {
-  //         const { senderId, receiverId, content } = req.body;
-  //         // Create a new message
-  //         const message = new Message({ senderId, receiverId, content, users:[senderId, receiverId,]});
-  //         console.log(message);
-  
-  //         const _res=await message.save();
-  //       console.log(_res)
-  
-  //         res.status(200).send({ success: true, message: 'Message sent successfully', userMessage: {senderId, receiverId, content, users:[{senderId, receiverId,}]} });
-  //     } catch (error) {
-  //         res.status(500).send({ success: false, error: error.message });
-  //     }
-  // };
 
   // we fetch user info here
   const fetchMessage = async (req, res) => {
