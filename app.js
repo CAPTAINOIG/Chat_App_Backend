@@ -6,7 +6,7 @@ const dotenv = require('dotenv');
 const mongoose = require('mongoose');
 const { Server } = require('socket.io');
 const Message = require('./models/message.model'); // Import the Message model
-const {getAllUser}=require("./controllers/user.controller")
+const {getAllUser} = require("./controllers/user.controller")
 
 const User = require('./models/user.model')
 
@@ -37,27 +37,27 @@ app.use('/user', userRouter);
 
 
 const onlineUsers = new Map();
+
 io.on('connection', (socket) => {
     console.log('A user connected:', socket.id);
-
     // Fetch all users when a new user connects
     getAllUser(socket);
-
      // Listen for 'user-online' event from client
      socket.on('user-online', (userId) => {
+        // console.log(userId);
         console.log(`User ${userId} is online with socket ID ${socket.id}`);
         onlineUsers.set(userId, socket.id);
         updateOnlineUsers();
     });
+
     // Listen for 'chat message' event from client
     socket.on('chat message', async ({ senderId, receiverId, content }) => {
         try {
             // Create a new message
             const message = new Message({ senderId, receiverId, content, users: [senderId, receiverId] });
             const savedMessage = await message.save();
-            console.log('Message saved:', savedMessage);
+            // console.log('Message saved:', savedMessage);
             // Find the receiver of the chat message and send the message to that specific user through their socket connection.
-             // Find the receiver of the chat message and send the message to that specific user through their socket connection.
              const user = await User.findOne({ _id: receiverId });
              const receiverSocketId = onlineUsers.get(receiverId) || user.socketId;
              if (receiverSocketId) {
@@ -73,10 +73,9 @@ io.on('connection', (socket) => {
             socket.emit('messageError', { success: false, error: error.message });
         }
     });
-
     // Listen for 'disconnect' event when a user disconnects
     socket.on('disconnect', () => {
-        console.log('User disconnected:', socket.id);
+        // console.log('User disconnected:', socket.id);
         for (let [userId, sockId] of onlineUsers.entries()) {
             if (sockId === socket.id) {
                 console.log(`User ${userId} with socket ID ${socket.id} is now offline`);
@@ -86,9 +85,10 @@ io.on('connection', (socket) => {
         }
         updateOnlineUsers()
     });
+
     function updateOnlineUsers() {
         const onlineUserIds = Array.from(onlineUsers.keys());
-        console.log('Online users:', onlineUserIds);
+        // console.log('Online users:', onlineUserIds);
         io.emit('update-online-users', onlineUserIds);
     }
 });

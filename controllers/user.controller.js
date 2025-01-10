@@ -104,32 +104,6 @@ const registerUser = (req, res) => {
     }
   }
 
-  // const getDashboard = (req, res) => {
-  //   let token = (req.headers.authorization.split(" ")[1]);
-  //   const secrete = process.env.SECRET;
-  //   jwt.verify(token, secrete, (err, result) => {
-  //     if (err) {
-  //       console.log(err);
-  //       res.send({ message: "Error Occured", status: false })
-  //     }
-  
-  //     else {
-  //       const userDetail = await User.findOne({ email: result.email });
-  //     if (!userDetail) {
-  //       return res.status(404).json({ message: 'User not found', status: false });
-  //     }
-  //     // Respond with user details
-  //     res.json({ message: 'Congratulations', status: true, userDetail });
-  
-  //   } catch (err) {
-  //     console.error('Error occurred:', err);
-  //     res.status(500).json({ message: 'Internal Server Error', status: false });
-  //   }
-  //     }
-  //   })
-  
-
-
   const getDashboard = async (req, res) => {
     try {
       // Extract token from Authorization header
@@ -165,27 +139,26 @@ const registerUser = (req, res) => {
   };
   
 
-  // we fetch all the users here
-// we use emit to send msg to the client side instead of res.send
   const getAllUser = (socket) => {
-    socket.on("getUsers",({token})=>{
-    const secrete = process.env.SECRET;
-    jwt.verify(token, secrete, async(err, result) => {
+    socket.on("getUsers", async ({ token }) => {
+      
+      const secret = process.env.SECRET;
   
-      if (err) {
-        socket.emit("getUsers",{ message: "Error Occured", status: false })
+      try {
+        const result = jwt.verify(token, secret);
+        // Update the user's socketId in the database to keep track of the connection
+        await User.findOneAndUpdate({ email: result.email }, { socketId: socket.id });
+        // Fetch all users from the database, excluding their passwords
+        const userDetail = await User.find({}).select("-password"); 
+        // Send the list of users back to the client
+        socket.emit("getUsers", { message: "Congratulations", status: true, users: userDetail });
+      } catch (err) {
+        // Emit an error message if token verification fails or other errors occur
+        socket.emit("getUsers", { message: "Error Occurred", status: false });
       }
-      else {
-       await User.findOneAndUpdate({email:result.email},{socketId:socket.id})
-        User.find({ }).select("-password")
-          .then((userDetail) => {
-            socket.emit("getUsers",{ message: "Congratulations", status: true,users: userDetail })
-          })
-      }
-    })
-    })
-  }
-
+    });
+  };
+  
   // we fetch user info here
   const fetchMessage = async (req, res) => {
     console.log(req.query)
