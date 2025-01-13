@@ -161,17 +161,31 @@ const registerUser = (req, res) => {
   
   // we fetch user info here
   const fetchMessage = async (req, res) => {
-    console.log(req.query)
+    // console.log(req.query)
     const { userId, receiverId } = req.query;
     try { 
-      const messages = await Message.find({users:{$all:[userId,receiverId]}})
-      console.log(messages)
+      const messages = await Message.find({users:{$all:[userId, receiverId]}})
+      // console.log(messages)
         res.status(200).json({ status: true, messages });
     } catch (error) {
-        console.error('Error fetching messages:', error);
+        // console.error('Error fetching messages:', error);
         res.status(500).json({ status: false, error: 'Error fetching messages' });
     }
   };
 
+  const deleteMessage = async (req, res) => {
+    const { id } = req.params; 
+    if (!id) {
+      return res.status(400).json({ status: false, message: 'Invalid message ID' });
+    }
+    try {
+      await Message.deleteOne({ _id: id });
+      res.status(200).json({ status: true, message: 'Message deleted successfully' });
+    } catch (error) {
+      console.error('Error deleting message:', error);
+      res.status(500).json({ status: false, error: 'Error deleting message' });
+    }
+  };
 
-  module.exports = {registerUser, userLogin, getDashboard, getAllUser, fetchMessage};
+
+  module.exports = {registerUser, userLogin, getDashboard, getAllUser, fetchMessage, deleteMessage};

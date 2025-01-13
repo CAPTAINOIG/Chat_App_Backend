@@ -5,7 +5,7 @@ const bodyParser = require('body-parser');
 const dotenv = require('dotenv');
 const mongoose = require('mongoose');
 const { Server } = require('socket.io');
-const Message = require('./models/message.model'); // Import the Message model
+const Message = require('./models/message.model'); 
 const {getAllUser} = require("./controllers/user.controller")
 
 const User = require('./models/user.model')
@@ -19,14 +19,15 @@ const server = http.createServer(app);
 
 const io = new Server(server, {
     cors: {
-        origin: "*", // Your frontend URL
-        methods: ["GET", "POST"]
+        // Your frontend URL
+        origin: "*", 
+        methods: ["GET", "POST", "DELETE", "PUT"]
     }
 });
 
 app.use(cors({
-    origin: "*", // Your frontend URL
-    methods: ["GET", "POST"],
+    origin: "*", 
+    methods: ["GET", "POST", "DELETE", "PUT"],
     credentials: true
 }));
 app.use(express.json());
@@ -39,29 +40,36 @@ app.use('/user', userRouter);
 const onlineUsers = new Map();
 
 io.on('connection', (socket) => {
-    console.log('A user connected:', socket.id);
+    // console.log('A user connected:', socket.id);
     // Fetch all users when a new user connects
     getAllUser(socket);
      // Listen for 'user-online' event from client
      socket.on('user-online', (userId) => {
-        // console.log(userId);
-        console.log(`User ${userId} is online with socket ID ${socket.id}`);
+        // console.log(`User ${userId} is online with socket ID ${socket.id}`);
         onlineUsers.set(userId, socket.id);
         updateOnlineUsers();
     });
 
     // Listen for 'chat message' event from client
-    socket.on('chat message', async ({ senderId, receiverId, content }) => {
+    socket.on('chat message', async ({ senderId, receiverId, content, replyTo }) => {
+        const data = {
+            senderId,
+            receiverId,
+            content,
+            users: [senderId, receiverId],
+            replyTo,
+        }
+        // console.log(data)
         try {
             // Create a new message
-            const message = new Message({ senderId, receiverId, content, users: [senderId, receiverId] });
+            const message = new Message({ senderId, receiverId, content, replyTo, users: [senderId, receiverId] });
             const savedMessage = await message.save();
             // console.log('Message saved:', savedMessage);
             // Find the receiver of the chat message and send the message to that specific user through their socket connection.
              const user = await User.findOne({ _id: receiverId });
              const receiverSocketId = onlineUsers.get(receiverId) || user.socketId;
              if (receiverSocketId) {
-                 io.to(receiverSocketId).emit('recievemessage', { senderId, receiverId, content, timestamp: savedMessage.timestamp });
+                 io.to(receiverSocketId).emit('recievemessage', { senderId, receiverId, content, replyTo, timestamp: savedMessage.timestamp });
              }
             // // Emit the received message to the receiver's socket
             // io.to(user.socketId).emit('recievemessage', { senderId, receiverId, content, timestamp: savedMessage.timestamp });
@@ -78,7 +86,7 @@ io.on('connection', (socket) => {
         // console.log('User disconnected:', socket.id);
         for (let [userId, sockId] of onlineUsers.entries()) {
             if (sockId === socket.id) {
-                console.log(`User ${userId} with socket ID ${socket.id} is now offline`);
+                // console.log(`User ${userId} with socket ID ${socket.id} is now offline`);
                 onlineUsers.delete(userId);
                 break;
             }
