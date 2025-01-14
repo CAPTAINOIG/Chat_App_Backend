@@ -6,6 +6,7 @@ const messageSchema = new mongoose.Schema({
     users: { type: [String], required: true },
     content: { type: String, required: true },
     replyTo: { type: String, required: false },
+    isTyping: { type: Boolean, default: false },
     timestamp: { type: Date, default: Date.now }
 });
 

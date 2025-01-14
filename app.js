@@ -5,10 +5,12 @@ const bodyParser = require('body-parser');
 const dotenv = require('dotenv');
 const mongoose = require('mongoose');
 const { Server } = require('socket.io');
+
+
 const Message = require('./models/message.model'); 
 const {getAllUser} = require("./controllers/user.controller")
-
 const User = require('./models/user.model')
+const userRouter = require('./routes/user.route')
 
 dotenv.config();
 
@@ -30,11 +32,12 @@ app.use(cors({
     methods: ["GET", "POST", "DELETE", "PUT"],
     credentials: true
 }));
+
 app.use(express.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-const userRouter = require('./routes/user.route')
 app.use('/user', userRouter);
+
 
 
 const onlineUsers = new Map();
@@ -50,8 +53,21 @@ io.on('connection', (socket) => {
         updateOnlineUsers();
     });
 
+    // const onlineUsers = new Map();
+
+        socket.on('typing', (data) => {
+            const { senderId, receiverId, content } = data;
+            io.to(receiverId).emit('typing', { senderId, isTyping: true, content, Date: new Date().toLocaleTimeString() });
+            // Emit to sender as well, if you want them to see it
+            // io.to(senderId).emit('typing', { senderId, isTyping: true, content, Date: new Date().toLocaleTimeString() });
+        });
+    
+        socket.on('stopTyping', (data) => {
+            const { senderId, receiverId, content } = data;
+            io.to(senderId).emit('stopTyping', { senderId, isTyping: false , content, Date: new Date().toLocaleTimeString() });
+        });
     // Listen for 'chat message' event from client
-    socket.on('chat message', async ({ senderId, receiverId, content, replyTo }) => {
+         socket.on('chat message', async ({ senderId, receiverId, content, replyTo }) => {
         const data = {
             senderId,
             receiverId,
@@ -100,8 +116,6 @@ io.on('connection', (socket) => {
         io.emit('update-online-users', onlineUserIds);
     }
 });
-
-
 
 
 const PORT = process.env.PORT || 3000;

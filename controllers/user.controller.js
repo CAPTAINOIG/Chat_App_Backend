@@ -72,7 +72,7 @@ const registerUser = (req, res) => {
 
 
   const userLogin = async (req, res) => {
-    console.log(req.body);
+    // console.log(req.body);
     const { password, email } = req.body;
     try {
       const user = await User.findOne({ email });
@@ -85,8 +85,8 @@ const registerUser = (req, res) => {
             res.status(500).json({ message: "Server error", status: false });
           } else {
             if (same) {
-              const token = jwt.sign({ email }, secrete, { expiresIn: "12h" });
-              console.log(token);
+              const token = jwt.sign({ email }, secrete, { expiresIn: "5d" });
+              // console.log(token);
               res.status(200).json({ message: "User signed in successfully", status: true, token, user });
             } else {
               res.status(401).json({ message: "Wrong password, please type the correct password", status: false });
@@ -182,7 +182,7 @@ const registerUser = (req, res) => {
       await Message.deleteOne({ _id: id });
       res.status(200).json({ status: true, message: 'Message deleted successfully' });
     } catch (error) {
-      console.error('Error deleting message:', error);
+      // console.error('Error deleting message:', error);
       res.status(500).json({ status: false, error: 'Error deleting message' });
     }
   };
