@@ -6,6 +6,7 @@ const nodemailer = require ('nodemailer')
 const http = require('http');
 const socketIo = require('socket.io');
 const mongoose = require('mongoose');
+const Conversation = require('../models/conversation.model')
 
 
 dotenv.config();
@@ -161,12 +162,12 @@ const registerUser = (req, res) => {
   
   // we fetch user info here
   const fetchMessage = async (req, res) => {
-    // console.log(req.query)
     const { userId, receiverId } = req.query;
     try { 
+      const userDetail = await User.find({}).select("-password"); 
       const messages = await Message.find({users:{$all:[userId, receiverId]}})
       // console.log(messages)
-        res.status(200).json({ status: true, messages });
+        res.status(200).json({ status: true, messages, userDetail });
     } catch (error) {
         // console.error('Error fetching messages:', error);
         res.status(500).json({ status: false, error: 'Error fetching messages' });
@@ -179,6 +180,8 @@ const registerUser = (req, res) => {
       return res.status(400).json({ status: false, message: 'Invalid message ID' });
     }
     try {
+      const userDetail = await User.find({}).select("-password"); 
+      // console.log(userDetail);
       await Message.deleteOne({ _id: id });
       res.status(200).json({ status: true, message: 'Message deleted successfully' });
     } catch (error) {
@@ -187,5 +190,184 @@ const registerUser = (req, res) => {
     }
   };
 
+  const forwardedMessage = async (req, res) => {
+    const userDetail = await User.find({}).select("-password"); 
+    console.log(userDetail);
+    const { messageId, senderId, receiverId } = req.body;
+    console.log(messageId, senderId, receiverId);
 
-  module.exports = {registerUser, userLogin, getDashboard, getAllUser, fetchMessage, deleteMessage};
+    if (!messageId || !senderId || !receiverId || receiverId.length === 0) {
+        return res.status(400).json({ error: "Invalid input" });
+    }
+
+    try {
+        // Find the original message
+        const originalMessage = await Message.findById(messageId);
+        if (!originalMessage) {
+            return res.status(404).json({ error: "Message not found" });
+        }
+
+        // Forward the message to each recipient
+        const forwardedMessages = [];
+        for (const receiverId of receiverId) {
+            const newMessage = new Message({
+                senderId: senderId,
+                content: originalMessage.content,
+                forwardedFrom: originalMessage.senderId,
+                receiverId: receiverId,
+            });
+
+            await newMessage.save();
+            forwardedMessages.push(newMessage);
+        }
+
+        res.status(200).json({
+            status: "success",
+            forwardedMessages,
+        });
+    } catch (error) {
+        console.error("Error forwarding message:", error);
+        res.status(500).json({ error: "Internal server error" });
+    }
+}
+
+const handlePinMessage = async (req, res) => {
+    const {_id, senderId, receiverId } = req.body;
+    console.log(_id, senderId, receiverId);
+  
+    if (!_id || !senderId || !Array.isArray(receiverId) || receiverId.length === 0) {
+      return res.status(400).json({ error: "Invalid input" });
+    }
+  
+    try {
+      // Find the original message
+      const originalMessage = await Message.findById(_id);
+      if (!originalMessage) {
+        return res.status(404).json({ error: "Message not found" });
+      }
+  
+      // Pin the message to each recipient
+      const pinnedMessages = [];
+      for (const recipientId of receiverId) {
+        const newMessage = new Message({
+          senderId: senderId,
+          content: originalMessage.content,
+          pinnedMessage: originalMessage._id,
+          receiverId: recipientId,
+        });
+  
+        await newMessage.save();
+        pinnedMessages.push(newMessage);
+      }
+  
+      res.status(200).json({status: "success", pinnedMessages});
+    } catch (error) {
+      console.error("Error pinning message:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  };
+
+
+// const handlePinMessage = async (req, res) => {
+//   const { _id, senderId, receiverId } = req.body;
+
+//   if (!_id || !senderId || !receiverId) {
+//     return res.status(400).json({ error: "Invalid input" });
+//   }
+
+//   try {
+//     // Find the original message
+//     const originalMessage = await Message.findById(_id);
+//     if (!originalMessage) {
+//       return res.status(404).json({ error: "Message not found" });
+//     }
+
+//     // Find the conversation between sender and receiver
+//     let conversation = await Conversation.findOne({
+//       users: { $all: [senderId, receiverId] },
+//     });
+
+//     if (!conversation) {
+//       // If the conversation doesn't exist, create it
+//       conversation = new Conversation({
+//         users: [senderId, receiverId],
+//         pinnedMessages: [originalMessage._id], // Add pinned message directly when creating conversation
+//       });
+//       await conversation.save();
+//     } else {
+//       // If conversation exists, add the pinned message if not already pinned
+//       if (!conversation.pinnedMessages.includes(originalMessage._id)) {
+//         conversation.pinnedMessages.push(originalMessage._id);
+//         await conversation.save();
+//       }
+//     }
+
+//     res.status(200).json({
+//       status: "success",
+//       pinnedMessages: conversation.pinnedMessages,
+//     });
+//   } catch (error) {
+//     console.error("Error pinning message:", error);
+//     res.status(500).json({ error: "Internal server error" });
+//   }
+// };
+
+
+
+// const handlePinMessage = async (req, res) => {
+//   const {_id, senderId, receiverId} = req.body;
+//   console.log(_id, senderId, receiverId);
+
+//   if (!_id || !senderId || !Array.isArray(receiverId) || receiverId.length === 0) {
+//     return res.status(400).json({ error: "Invalid input" });
+//   }
+
+//   try {
+//     // Find the original message
+//     const originalMessage = await Message.findById(_id);
+//     if (!originalMessage) {
+//       return res.status(404).json({ error: "Message not found" });
+//     }
+
+//     const pinnedMessages = [];
+
+//     // Loop through each recipient and pin the message
+//     for (const recipientId of receiverId) {
+//       // Find the user and get their pinned messages
+//       const user = await User.findById(recipientId);
+
+//       if (!user) {
+//         return res.status(404).json({ error: `User with ID ${recipientId} not found` });
+//       }
+
+//       // Check if the message is already pinned for the user
+//       const isMessagePinned = user.pinnedMessages.some(msg => msg.toString() === _id);
+
+//       if (!isMessagePinned) {
+//         // Add the pinned message to the user's pinned messages array
+//         user.pinnedMessages.push(originalMessage._id);
+
+//         // Save the user with the updated pinned messages array
+//         await user.save();
+
+//         // Optionally, you could also store the pinned message itself if necessary
+//         pinnedMessages.push({
+//           senderId: senderId,
+//           content: originalMessage.content,
+//           pinnedMessage: originalMessage._id,
+//           receiverId: recipientId,
+//         });
+//       }
+//     }
+//     console.log(pinnedMessages);
+
+//     res.status(200).json({ status: "success", pinnedMessages });
+//   } catch (error) {
+//     console.error("Error pinning message:", error);
+//     res.status(500).json({ error: "Internal server error" });
+//   }
+// };
+
+
+
+  module.exports = {registerUser, userLogin, getDashboard, getAllUser, fetchMessage, deleteMessage, forwardedMessage, handlePinMessage};

@@ -22,6 +22,14 @@ const userSchema = new mongoose.Schema({
     type:String,
     required: false,
   },
+
+  pinnedMessages: [
+    {
+      type: mongoose.Schema.Types.ObjectId,
+      // Reference to the Message model
+      ref: 'Message', 
+    }
+  ]
 });
 
 

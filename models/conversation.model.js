@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 
-const messageSchema = new mongoose.Schema({
+const conversationSchema = new mongoose.Schema({
     senderId: { type: String, required: true },
     receiverId: { type: String, required: true },
     users: { type: [String], required: true },
@@ -8,11 +8,14 @@ const messageSchema = new mongoose.Schema({
     replyTo: { type: String, required: false },
     isTyping: { type: Boolean, default: false },
     // pinnedMessage: { type: String, required: false },
-    pinnedMessage: { type: mongoose.Schema.Types.ObjectId, ref: 'Message', required: false },
+    pinnedMessages: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Message',
+      }],
     forwardedFrom: { type: String }, 
     timestamp: { type: Date, default: Date.now }
 });
 
-const Message = mongoose.model('Message', messageSchema);
+const Conversation = mongoose.model('Conversation', conversationSchema);
 
-module.exports = Message;
+module.exports = Conversation;
