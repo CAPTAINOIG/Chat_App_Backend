@@ -7,8 +7,8 @@ const messageSchema = new mongoose.Schema({
     content: { type: String, required: true },
     replyTo: { type: String, required: false },
     isTyping: { type: Boolean, default: false },
-    // pinnedMessage: { type: String, required: false },
-    pinnedMessage: { type: mongoose.Schema.Types.ObjectId, ref: 'Message', required: false },
+    pinnedMessage: { type: String, required: false },
+    // pinnedMessage: { type: mongoose.Schema.Types.ObjectId, ref: 'Message', required: false },
     forwardedFrom: { type: String }, 
     timestamp: { type: Date, default: Date.now }
 });

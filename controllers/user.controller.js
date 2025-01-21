@@ -235,8 +235,9 @@ const handlePinMessage = async (req, res) => {
     const {_id, senderId, receiverId } = req.body;
     console.log(_id, senderId, receiverId);
   
-    if (!_id || !senderId || !Array.isArray(receiverId) || receiverId.length === 0) {
-      return res.status(400).json({ error: "Invalid input" });
+    if (!_id || !senderId || !receiverId) {
+    // if (!_id || !senderId || !Array.isArray(receiverId) || receiverId.length === 0) {
+      return res.status(400).json({status: false, error: "Invalid input", message: "Invalid input"});
     }
   
     try {
@@ -248,25 +249,41 @@ const handlePinMessage = async (req, res) => {
   
       // Pin the message to each recipient
       const pinnedMessages = [];
-      for (const recipientId of receiverId) {
+      // for (const recipientId of receiverId) {
         const newMessage = new Message({
           senderId: senderId,
           content: originalMessage.content,
           pinnedMessage: originalMessage._id,
-          receiverId: recipientId,
+          receiverId: receiverId,
         });
   
         await newMessage.save();
         pinnedMessages.push(newMessage);
-      }
+      // }
   
-      res.status(200).json({status: "success", pinnedMessages});
+      res.status(200).json({status: "success", pinnedMessages, message: "Message pinned successfully"});
     } catch (error) {
       console.error("Error pinning message:", error);
       res.status(500).json({ error: "Internal server error" });
     }
   };
 
+  const fetchPinMessage = async (req, res) => {
+    const { userId, receiverId } = req.query; 
+    console.log(userId, receiverId);
+  
+    try {
+      const pinMessage = await Message.find({
+        senderId: userId,
+        receiverId: receiverId,
+        pinnedMessage: { $exists: true } 
+      });
+      res.status(200).json({ status: true, pinMessage, message: "Pinned messages fetched successfully"});
+    } catch (error) {
+      res.status(500).json({ status: false, error: 'Error fetching messages' });
+    }
+  };
+  
 
 // const handlePinMessage = async (req, res) => {
 //   const { _id, senderId, receiverId } = req.body;
@@ -370,4 +387,4 @@ const handlePinMessage = async (req, res) => {
 
 
 
-  module.exports = {registerUser, userLogin, getDashboard, getAllUser, fetchMessage, deleteMessage, forwardedMessage, handlePinMessage};
+  module.exports = {registerUser, userLogin, getDashboard, getAllUser, fetchMessage, deleteMessage, forwardedMessage, handlePinMessage, fetchPinMessage};
