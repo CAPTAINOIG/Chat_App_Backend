@@ -161,31 +161,67 @@ const registerUser = (req, res) => {
   };
   
   // we fetch user info here
+  // const fetchMessage = async (req, res) => {
+  //   const { userId, receiverId, messageId } = req.query;
+  //   // console.log(userId, receiverId)
+  //   try { 
+  //     const userDetail = await User.find({}).select("-password"); 
+  //     const messages = await Message.find({users:{$all:[userId, receiverId]}})
+  //     console.log(messages)
+  //     console.log(messageId)
+  //       res.status(200).json({ status: true, messages, userDetail });
+  //   } catch (error) {
+  //       // console.error('Error fetching messages:', error);
+  //       res.status(500).json({ status: false, error: 'Error fetching messages' });
+  //   }
+  // };
+
   const fetchMessage = async (req, res) => {
-    const { userId, receiverId } = req.query;
-    try { 
-      const userDetail = await User.find({}).select("-password"); 
-      const messages = await Message.find({users:{$all:[userId, receiverId]}})
-      // console.log(messages)
-        res.status(200).json({ status: true, messages, userDetail });
+    const { userId, receiverId, messageId } = req.query;
+
+    try {
+        // Build the query for messages
+        const query = {
+            users: { $all: [userId, receiverId] }
+        };
+
+        // If messageId is provided, use it to fetch a specific message
+        if (messageId) {
+            query.messageId = messageId; // Use the custom messageId field
+        }
+
+        // Fetch messages based on the constructed query
+        const messages = await Message.find(query);
+        console.log(messages);
+
+        // Fetch user details excluding password
+        const userDetail = await User.find({}).select("-password");
+
+        res.status(200).json({ 
+            status: true, 
+            messages, 
+            userDetail 
+        });
     } catch (error) {
-        // console.error('Error fetching messages:', error);
-        res.status(500).json({ status: false, error: 'Error fetching messages' });
+        console.error('Error fetching messages:', error);
+        res.status(500).json({ 
+            status: false, 
+            error: 'Error fetching messages' 
+        });
     }
-  };
+};
 
   const deleteMessage = async (req, res) => {
-    const { id } = req.params; 
-    if (!id) {
+    const { messageId } = req.params; 
+    console.log(messageId)
+    if (!messageId) {
       return res.status(400).json({ status: false, message: 'Invalid message ID' });
     }
     try {
       const userDetail = await User.find({}).select("-password"); 
-      // console.log(userDetail);
-      await Message.deleteOne({ _id: id });
+      await Message.deleteOne({ messageId: messageId });
       res.status(200).json({ status: true, message: 'Message deleted successfully' });
     } catch (error) {
-      // console.error('Error deleting message:', error);
       res.status(500).json({ status: false, error: 'Error deleting message' });
     }
   };
@@ -231,47 +267,130 @@ const registerUser = (req, res) => {
     }
 }
 
+// const handlePinMessage = async (req, res) => {
+//     const {messageId, senderId, receiverId } = req.body;
+//     if (!messageId || !senderId || !receiverId) {
+//       return res.status(400).json({status: false, error: "Invalid input", message: "Invalid input"});
+//     }
+//     try {
+//       console.log(messageId);
+//       const originalMessage = await Message.findOne({ $or: [
+//         { messageId: messageId },
+//         { _id: messageId }
+//     ]});
+//       if (!originalMessage) {
+//         return res.status(404).json({ error: "Message not found" });
+//       }
+//       const existingPinnedMessage = await Message.findOne({
+//         senderId,
+//         receiverId,
+//         pinnedMessage: messageId,
+//       });
+//       if (existingPinnedMessage) {
+//         return res.status(400).json({status: false, error: "Message already pinned", message: "Message already pinned"});
+//       }
+//       const pinnedMessages = [];
+//         const newMessage = new Message({
+//           senderId: senderId,
+//           content: originalMessage.content,
+//           pinnedMessage: originalMessage.messageId,
+//           receiverId: receiverId,
+//         });
+  
+//         await newMessage.save();
+//         pinnedMessages.push(newMessage);
+//       res.status(200).json({status: "success", pinnedMessages, message: "Message pinned successfully"});
+//     } catch (error) {
+//       res.status(500).json({ error: "Internal server error" });
+//     }
+//   };
+
 const handlePinMessage = async (req, res) => {
-    const {_id, senderId, receiverId } = req.body;
-    console.log(_id, senderId, receiverId);
+  const { messageId, senderId, receiverId } = req.body;
   
-    if (!_id || !senderId || !receiverId) {
-    // if (!_id || !senderId || !Array.isArray(receiverId) || receiverId.length === 0) {
-      return res.status(400).json({status: false, error: "Invalid input", message: "Invalid input"});
-    }
-  
-    try {
-      // Find the original message
-      const originalMessage = await Message.findById(_id);
+  console.log('Pin Message Request:', { messageId, senderId, receiverId });
+
+  if (!messageId || !senderId || !receiverId) {
+      return res.status(400).json({
+          status: false, 
+          error: "Invalid input parameters"
+      });
+  }
+
+  try {
+      // Comprehensive message finding
+      const originalMessage = await Message.findOne({messageId: messageId});
+
+      console.log('Original Message Found:', originalMessage);
+
       if (!originalMessage) {
-        return res.status(404).json({ error: "Message not found" });
+          return res.status(404).json({ 
+              status: false,
+              error: "Message not found",
+              details: { messageId, searchedFields: ['messageId', '_id'] }
+          });
       }
-  
-      // Pin the message to each recipient
-      const pinnedMessages = [];
-      // for (const recipientId of receiverId) {
-        const newMessage = new Message({
-          senderId: senderId,
+
+      // Validate message fields
+      if (!originalMessage.content) {
+          return res.status(400).json({
+              status: false,
+              error: "Invalid message content"
+          });
+      }
+
+      const newMessage = new Message({
+          senderId,
           content: originalMessage.content,
-          pinnedMessage: originalMessage._id,
-          receiverId: receiverId,
-        });
-  
-        await newMessage.save();
-        pinnedMessages.push(newMessage);
-      // }
-  
-      res.status(200).json({status: "success", pinnedMessages, message: "Message pinned successfully"});
-    } catch (error) {
-      console.error("Error pinning message:", error);
-      res.status(500).json({ error: "Internal server error" });
+          pinnedMessage: originalMessage.messageId,
+          receiverId,
+          users: [senderId, receiverId]
+      });
+
+      const savedMessage = await newMessage.save();
+
+      res.status(200).json({
+          status: "success", 
+          pinnedMessages: [savedMessage], 
+          message: "Message pinned successfully"
+      });
+  } catch (error) {
+      console.error('Detailed Pin Message Error:', {
+          message: error.message,
+          name: error.name,
+          stack: error.stack,
+          errorObject: error
+      });
+
+      res.status(500).json({ 
+          status: false,
+          error: "Internal server error",
+          details: error.message,
+          errorName: error.name
+      });
+  }
+};
+  const handleUnpinMessage = async (req, res) => {
+    const { messageId, senderId, receiverId } = req.body;
+    if (!messageId || !senderId || !receiverId) {
+      return res.status(400).json({status: false,  error: "Invalid input", message: "Invalid input"});
     }
-  };
+    try {
+      const existingPinnedMessage = await Message.findOne({senderId, receiverId, pinnedMessage: messageId});
+      if (!existingPinnedMessage) {
+        return res.status(404).json({status: false, error: "Message not found", message: "Message not found"});
+      }
+      await Message.findByIdAndDelete(existingPinnedMessage.messageId);
+      res.status(200).json({status: "success", message: "Message unpinned successfully"});
+    } 
+    catch (error) {
+      console.error("Error pinning message:", error);
+      res.status(500).json({status: false, error: "Internal server error", message: "Internal server error"});
+    }
+  }
 
   const fetchPinMessage = async (req, res) => {
     const { userId, receiverId } = req.query; 
-    console.log(userId, receiverId);
-  
     try {
       const pinMessage = await Message.find({
         senderId: userId,
@@ -285,106 +404,5 @@ const handlePinMessage = async (req, res) => {
   };
   
 
-// const handlePinMessage = async (req, res) => {
-//   const { _id, senderId, receiverId } = req.body;
 
-//   if (!_id || !senderId || !receiverId) {
-//     return res.status(400).json({ error: "Invalid input" });
-//   }
-
-//   try {
-//     // Find the original message
-//     const originalMessage = await Message.findById(_id);
-//     if (!originalMessage) {
-//       return res.status(404).json({ error: "Message not found" });
-//     }
-
-//     // Find the conversation between sender and receiver
-//     let conversation = await Conversation.findOne({
-//       users: { $all: [senderId, receiverId] },
-//     });
-
-//     if (!conversation) {
-//       // If the conversation doesn't exist, create it
-//       conversation = new Conversation({
-//         users: [senderId, receiverId],
-//         pinnedMessages: [originalMessage._id], // Add pinned message directly when creating conversation
-//       });
-//       await conversation.save();
-//     } else {
-//       // If conversation exists, add the pinned message if not already pinned
-//       if (!conversation.pinnedMessages.includes(originalMessage._id)) {
-//         conversation.pinnedMessages.push(originalMessage._id);
-//         await conversation.save();
-//       }
-//     }
-
-//     res.status(200).json({
-//       status: "success",
-//       pinnedMessages: conversation.pinnedMessages,
-//     });
-//   } catch (error) {
-//     console.error("Error pinning message:", error);
-//     res.status(500).json({ error: "Internal server error" });
-//   }
-// };
-
-
-
-// const handlePinMessage = async (req, res) => {
-//   const {_id, senderId, receiverId} = req.body;
-//   console.log(_id, senderId, receiverId);
-
-//   if (!_id || !senderId || !Array.isArray(receiverId) || receiverId.length === 0) {
-//     return res.status(400).json({ error: "Invalid input" });
-//   }
-
-//   try {
-//     // Find the original message
-//     const originalMessage = await Message.findById(_id);
-//     if (!originalMessage) {
-//       return res.status(404).json({ error: "Message not found" });
-//     }
-
-//     const pinnedMessages = [];
-
-//     // Loop through each recipient and pin the message
-//     for (const recipientId of receiverId) {
-//       // Find the user and get their pinned messages
-//       const user = await User.findById(recipientId);
-
-//       if (!user) {
-//         return res.status(404).json({ error: `User with ID ${recipientId} not found` });
-//       }
-
-//       // Check if the message is already pinned for the user
-//       const isMessagePinned = user.pinnedMessages.some(msg => msg.toString() === _id);
-
-//       if (!isMessagePinned) {
-//         // Add the pinned message to the user's pinned messages array
-//         user.pinnedMessages.push(originalMessage._id);
-
-//         // Save the user with the updated pinned messages array
-//         await user.save();
-
-//         // Optionally, you could also store the pinned message itself if necessary
-//         pinnedMessages.push({
-//           senderId: senderId,
-//           content: originalMessage.content,
-//           pinnedMessage: originalMessage._id,
-//           receiverId: recipientId,
-//         });
-//       }
-//     }
-//     console.log(pinnedMessages);
-
-//     res.status(200).json({ status: "success", pinnedMessages });
-//   } catch (error) {
-//     console.error("Error pinning message:", error);
-//     res.status(500).json({ error: "Internal server error" });
-//   }
-// };
-
-
-
-  module.exports = {registerUser, userLogin, getDashboard, getAllUser, fetchMessage, deleteMessage, forwardedMessage, handlePinMessage, fetchPinMessage};
+  module.exports = {registerUser, userLogin, getDashboard, getAllUser, fetchMessage, deleteMessage, forwardedMessage, handlePinMessage, fetchPinMessage, handleUnpinMessage};

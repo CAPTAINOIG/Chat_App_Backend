@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 
 const messageSchema = new mongoose.Schema({
+    messageId: {type: String, required: false},
     senderId: { type: String, required: true },
     receiverId: { type: String, required: true },
     users: { type: [String], required: true },
