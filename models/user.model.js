@@ -23,6 +23,16 @@ const userSchema = new mongoose.Schema({
     required: false,
   },
 
+  profilePicture: {
+    type: String,
+    required: false,
+  },
+
+  otp: {
+    type: String,
+    required: false,
+  },
+
   pinnedMessages: [
     {
       type: mongoose.Schema.Types.ObjectId,

@@ -1,10 +1,21 @@
 const express = require('express');
 const http = require('http');
+const socketIo = require('socket.io');
 const cors = require('cors');
+// const mongoose = require('mongoose');
 const bodyParser = require('body-parser');
+
+require('./connection/mongoose.connection');
+
+const app = express();
+
+app.use(express.json({limit: '50mb'}));
+app.use(bodyParser.urlencoded({ extended: true }));
+const server = http.createServer(app);
+
 const dotenv = require('dotenv');
-const mongoose = require('mongoose');
 const { Server } = require('socket.io');
+const cloudinary = require('cloudinary');
 
 
 const Message = require('./models/message.model'); 
@@ -14,10 +25,7 @@ const userRouter = require('./routes/user.route')
 
 dotenv.config();
 
-require('./connection/mongoose.connection');
 
-const app = express();
-const server = http.createServer(app);
 
 const io = new Server(server, {
     cors: {
@@ -33,11 +41,13 @@ app.use(cors({
     credentials: true
 }));
 
-app.use(express.json());
-app.use(bodyParser.urlencoded({ extended: true }));
-
 app.use('/user', userRouter);
 
+cloudinary.config ({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET
+})
 
 
 const onlineUsers = new Map();

@@ -1,15 +1,16 @@
 let User = require('../models/user.model')
 let Message = require('../models/message.model')
-const dotenv = require('dotenv')
+// const dotenv = require('dotenv')
 const jwt = require("jsonwebtoken")
 const nodemailer = require ('nodemailer')
-const http = require('http');
-const socketIo = require('socket.io');
-const mongoose = require('mongoose');
-const Conversation = require('../models/conversation.model')
+const cloudinary = require('cloudinary')
+// const http = require('http');
+// const socketIo = require('socket.io');
+// const mongoose = require('mongoose');
+// const Conversation = require('../models/conversation.model')
 
 
-dotenv.config();
+// dotenv.config();
 
 
 const pass = process.env.PASS;
@@ -138,6 +139,39 @@ const registerUser = (req, res) => {
       res.status(500).json({ message: 'Internal Server Error', status: false });
     }
   };
+
+  // Note: base64 and usrId are payload coming from frontend
+  const profilePicture = async (req, res) => {
+    const { userId, base64 } = req.body;
+    try {
+      const uploadResult = await cloudinary.v2.uploader.upload(base64);
+      const userDetail = await User.findOneAndUpdate({_id: userId }, { $set: { profilePicture: uploadResult.secure_url } },  { new: true });
+      if (!userDetail) {
+        return res.status(404).json({ message: 'Profile picture not found', status: false });
+      } else {
+        return res.status(200).json({ message: 'Profile picture updated successfully', status: true, profilePicture: uploadResult.secure_url, userDetail });
+      }
+    }
+    catch (error) {
+      console.error('Error updating profile picture:', error);
+      res.status(500).json({ message: 'Internal server error', status: false });
+    }
+  }
+
+const fetchProfilePicture = async (req, res) => {
+    const { userId } = req.query;
+      try {
+      const profilePicture = await User.findOne({ _id: userId });
+      if (!profilePicture) {
+        return res.status(404).json({ message: 'Profile picture not found', status: false });
+      }
+      const url = profilePicture.profilePicture;
+      res.status(200).json({ message: 'Profile picture updated', status: true, url });
+    }
+    catch (error) {
+      res.status(500).json({ message: 'Internal server error', status: false });
+    }
+  }
   
 
   const getAllUser = (socket) => {
@@ -192,7 +226,6 @@ const registerUser = (req, res) => {
 
         // Fetch messages based on the constructed query
         const messages = await Message.find(query);
-        console.log(messages);
 
         // Fetch user details excluding password
         const userDetail = await User.find({}).select("-password");
@@ -266,44 +299,6 @@ const registerUser = (req, res) => {
         res.status(500).json({ error: "Internal server error" });
     }
 }
-
-// const handlePinMessage = async (req, res) => {
-//     const {messageId, senderId, receiverId } = req.body;
-//     if (!messageId || !senderId || !receiverId) {
-//       return res.status(400).json({status: false, error: "Invalid input", message: "Invalid input"});
-//     }
-//     try {
-//       console.log(messageId);
-//       const originalMessage = await Message.findOne({ $or: [
-//         { messageId: messageId },
-//         { _id: messageId }
-//     ]});
-//       if (!originalMessage) {
-//         return res.status(404).json({ error: "Message not found" });
-//       }
-//       const existingPinnedMessage = await Message.findOne({
-//         senderId,
-//         receiverId,
-//         pinnedMessage: messageId,
-//       });
-//       if (existingPinnedMessage) {
-//         return res.status(400).json({status: false, error: "Message already pinned", message: "Message already pinned"});
-//       }
-//       const pinnedMessages = [];
-//         const newMessage = new Message({
-//           senderId: senderId,
-//           content: originalMessage.content,
-//           pinnedMessage: originalMessage.messageId,
-//           receiverId: receiverId,
-//         });
-  
-//         await newMessage.save();
-//         pinnedMessages.push(newMessage);
-//       res.status(200).json({status: "success", pinnedMessages, message: "Message pinned successfully"});
-//     } catch (error) {
-//       res.status(500).json({ error: "Internal server error" });
-//     }
-//   };
 
 const handlePinMessage = async (req, res) => {
   const { messageId, senderId, receiverId } = req.body;
@@ -405,4 +400,4 @@ const handlePinMessage = async (req, res) => {
   
 
 
-  module.exports = {registerUser, userLogin, getDashboard, getAllUser, fetchMessage, deleteMessage, forwardedMessage, handlePinMessage, fetchPinMessage, handleUnpinMessage};
+  module.exports = {registerUser, userLogin, getDashboard, getAllUser, fetchMessage, deleteMessage, forwardedMessage, handlePinMessage, fetchPinMessage, handleUnpinMessage, profilePicture, fetchProfilePicture};
