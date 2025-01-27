@@ -32,14 +32,12 @@ const transporter = nodemailer.createTransport({
 
 const registerUser = (req, res) => {
     let form = new User(req.body);
-    const { username, email, password } = req.body;
+    const { username, email, password, number } = req.body;
     const newUser = new User({
-        username, email, password
+        username, email, password, number
     })
-    // console.log(newUser);
     newUser.save()
       .then((result) => {
-        // console.log(result);
         res.status(200).json({ status: true, message: "User signed up successfully", result });
         console.log('✔ user found', email);
         const mailOptions = {
@@ -195,54 +193,53 @@ const fetchProfilePicture = async (req, res) => {
   };
   
   // we fetch user info here
-  // const fetchMessage = async (req, res) => {
-  //   const { userId, receiverId, messageId } = req.query;
-  //   // console.log(userId, receiverId)
-  //   try { 
-  //     const userDetail = await User.find({}).select("-password"); 
-  //     const messages = await Message.find({users:{$all:[userId, receiverId]}})
-  //     console.log(messages)
-  //     console.log(messageId)
-  //       res.status(200).json({ status: true, messages, userDetail });
-  //   } catch (error) {
-  //       // console.error('Error fetching messages:', error);
-  //       res.status(500).json({ status: false, error: 'Error fetching messages' });
-  //   }
-  // };
-
   const fetchMessage = async (req, res) => {
     const { userId, receiverId, messageId } = req.query;
-
-    try {
-        // Build the query for messages
-        const query = {
-            users: { $all: [userId, receiverId] }
-        };
-
-        // If messageId is provided, use it to fetch a specific message
-        if (messageId) {
-            query.messageId = messageId; // Use the custom messageId field
-        }
-
-        // Fetch messages based on the constructed query
-        const messages = await Message.find(query);
-
-        // Fetch user details excluding password
-        const userDetail = await User.find({}).select("-password");
-
-        res.status(200).json({ 
-            status: true, 
-            messages, 
-            userDetail 
-        });
+    // console.log(userId, receiverId, messageId)
+    try { 
+      const userDetail = await User.find({}).select("-password"); 
+      const messages = await Message.find({users:{$all:[userId, receiverId]}})
+      console.log(messages)
+        res.status(200).json({ status: true, messages, userDetail });
     } catch (error) {
-        console.error('Error fetching messages:', error);
-        res.status(500).json({ 
-            status: false, 
-            error: 'Error fetching messages' 
-        });
+        // console.error('Error fetching messages:', error);
+        res.status(500).json({ status: false, error: 'Error fetching messages' });
     }
-};
+  };
+
+//   const fetchMessage = async (req, res) => {
+//     const { userId, receiverId, messageId } = req.query;
+
+//     try {
+//         // Build the query for messages
+//         const query = {
+//             users: { $all: [userId, receiverId] }
+//         };
+
+//         // If messageId is provided, use it to fetch a specific message
+//         if (messageId) {
+//             query.messageId = messageId; // Use the custom messageId field
+//         }
+
+//         // Fetch messages based on the constructed query
+//         const messages = await Message.find(query);
+
+//         // Fetch user details excluding password
+//         const userDetail = await User.find({}).select("-password");
+
+//         res.status(200).json({ 
+//             status: true, 
+//             messages, 
+//             userDetail 
+//         });
+//     } catch (error) {
+//         console.error('Error fetching messages:', error);
+//         res.status(500).json({ 
+//             status: false, 
+//             error: 'Error fetching messages' 
+//         });
+//     }
+// };
 
   const deleteMessage = async (req, res) => {
     const { messageId } = req.params; 
@@ -302,9 +299,6 @@ const fetchProfilePicture = async (req, res) => {
 
 const handlePinMessage = async (req, res) => {
   const { messageId, senderId, receiverId } = req.body;
-  
-  console.log('Pin Message Request:', { messageId, senderId, receiverId });
-
   if (!messageId || !senderId || !receiverId) {
       return res.status(400).json({
           status: false, 
@@ -313,31 +307,27 @@ const handlePinMessage = async (req, res) => {
   }
 
   try {
-      // Comprehensive message finding
-      const originalMessage = await Message.findOne({messageId: messageId});
-
-      console.log('Original Message Found:', originalMessage);
-
+      const originalMessage = await Message.findOne({messageId, senderId, receiverId});
       if (!originalMessage) {
-          return res.status(404).json({ 
-              status: false,
-              error: "Message not found",
-              details: { messageId, searchedFields: ['messageId', '_id'] }
+          return res.status(404).json({status: false, error: "Message not found", message: "Message not found", details: { messageId, searchedFields: ['messageId', '_id'] }
           });
       }
-
-      // Validate message fields
       if (!originalMessage.content) {
-          return res.status(400).json({
-              status: false,
-              error: "Invalid message content"
-          });
+          return res.status(400).json({status: false, error: "Invalid message content", message: "Invalid message content"});
       }
-
+      const existingPinnedMessage = await Message.findOne({senderId, receiverId,  pinnedMessage: originalMessage.content });
+      if(existingPinnedMessage){
+        return res.status(400).json({
+          status: false,
+          message: "Message already pinned",
+          error: "Message already pinned",
+        });
+      }
       const newMessage = new Message({
           senderId,
           content: originalMessage.content,
-          pinnedMessage: originalMessage.messageId,
+          messageId: originalMessage.messageId,
+          pinnedMessage: originalMessage.content,
           receiverId,
           users: [senderId, receiverId]
       });
@@ -365,6 +355,7 @@ const handlePinMessage = async (req, res) => {
       });
   }
 };
+
   const handleUnpinMessage = async (req, res) => {
     const { messageId, senderId, receiverId } = req.body;
     if (!messageId || !senderId || !receiverId) {
@@ -373,6 +364,7 @@ const handlePinMessage = async (req, res) => {
     try {
       const existingPinnedMessage = await Message.findOne({senderId, receiverId, pinnedMessage: messageId});
       if (!existingPinnedMessage) {
+        console.log('message not found');
         return res.status(404).json({status: false, error: "Message not found", message: "Message not found"});
       }
       await Message.findByIdAndDelete(existingPinnedMessage.messageId);

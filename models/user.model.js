@@ -8,25 +8,11 @@ const userSchema = new mongoose.Schema({
     required: true,
     // unique: true,
   },
-  email: {
-    type: String,
-    required: true,
-    unique: true,
-  },
-  password: {
-    type: String,
-    required: true,
-  },
-
-  socketId : {
-    type:String,
-    required: false,
-  },
-
-  profilePicture: {
-    type: String,
-    required: false,
-  },
+  email: {type: String, required: true, unique: true},
+  password: {type: String, required: true},
+  number: {type: Number, required: true},
+  socketId : {type:String, required: false},
+  profilePicture: {type: String, required: false},
 
   otp: {
     type: String,

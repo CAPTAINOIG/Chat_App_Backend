@@ -11,6 +11,7 @@ const messageSchema = new mongoose.Schema({
     pinnedMessage: { type: String, required: false },
     // pinnedMessage: { type: mongoose.Schema.Types.ObjectId, ref: 'Message', required: false },
     forwardedFrom: { type: String }, 
+    // forwardedFrom: { type: mongoose.Schema.Types.ObjectId, ref: 'Message' },
     timestamp: { type: Date, default: Date.now }
 });
 
