@@ -4,6 +4,8 @@ let Message = require('../models/message.model')
 const jwt = require("jsonwebtoken")
 const nodemailer = require ('nodemailer')
 const cloudinary = require('cloudinary')
+const { OAuth2Client } = require('google-auth-library');
+const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID); 
 // const http = require('http');
 // const socketIo = require('socket.io');
 // const mongoose = require('mongoose');
@@ -39,7 +41,6 @@ const registerUser = (req, res) => {
     newUser.save()
       .then((result) => {
         res.status(200).json({ status: true, message: "User signed up successfully", result });
-        console.log('✔ user found', email);
         const mailOptions = {
           from: process.env.USER,
           to: email,
@@ -61,7 +62,6 @@ const registerUser = (req, res) => {
           return transporter.sendMail(mailOptions)
       })
       .catch((err) => {
-        console.error(err);
         if (err.code === 11000) {
           res.status(409).json({ status: false, message: "Duplicate user found" });
         } else {
@@ -104,6 +104,35 @@ const registerUser = (req, res) => {
     }
   }
 
+  // For Google Authentication
+const googleAuth = async (req, res) => {
+  try {
+    const googleToken = req.body.googleToken;
+    if (!googleToken) {
+      return res.status(400).json({ message: "Google token is required" });
+    }
+    
+    // Verify Google token and create JWT for the user
+    const ticket = await client.verifyIdToken({
+      idToken: googleToken,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+    
+    const { email, name, sub } = ticket.getPayload();
+    let user = await User.findOne({ email });
+    if (!user) {
+      user = await User.create({ email, username: name, googleId: sub, password: 'google-auth-user'  });
+    }
+
+    const token = jwt.sign({ id: user._id, email: user.email }, process.env.SECRET, { expiresIn: '7d' });
+    return res.json({ message: "User authenticated", status: true, userToken: token, userDetail: user });
+
+  } catch (err) {
+    console.error('Error during Google authentication:', err);
+    res.status(500).json({ message: 'Internal Server Error' });
+  }
+};
+
   const getDashboard = async (req, res) => {
     try {
       // Extract token from Authorization header
@@ -111,29 +140,21 @@ const registerUser = (req, res) => {
       if (!authHeader || !authHeader.startsWith('Bearer ')) {
         return res.status(401).json({ message: 'Authorization token missing or malformed', status: false });
       }
-  
       const token = authHeader.split(' ')[1];
       const secret = process.env.SECRET;
-  
-      // Verify token
       const decoded = await new Promise((resolve, reject) => {
         jwt.verify(token, secret, (err, result) => {
           if (err) return reject(err);
           resolve(result);
         });
       });
-  
-      // Find user by email from token
       const userDetail = await User.findOne({ email: decoded.email });
       if (!userDetail) {
         return res.status(404).json({ message: 'User not found', status: false });
       }
-  
-      // Respond with user details
       res.json({ message: 'Congratulations', status: true, userDetail });
   
     } catch (err) {
-      console.error('Error occurred:', err);
       res.status(500).json({ message: 'Internal Server Error', status: false });
     }
   };
@@ -151,7 +172,6 @@ const registerUser = (req, res) => {
       }
     }
     catch (error) {
-      console.error('Error updating profile picture:', error);
       res.status(500).json({ message: 'Internal server error', status: false });
     }
   }
@@ -167,6 +187,37 @@ const fetchProfilePicture = async (req, res) => {
       res.status(200).json({ message: 'Profile picture updated', status: true, url });
     }
     catch (error) {
+      res.status(500).json({ message: 'Internal server error', status: false });
+    }
+  }
+
+  const updateProfile = async (req, res) => {
+    const {userId} = req.params;
+    const {profileName, aboutMe} = req.body;
+    try {
+      if(!userId) {
+        return res.status(400).json({ message: 'Invalid user ID', status: false });
+      }
+      const updatedUser = {profileName: profileName, aboutMe: aboutMe};
+      if(!updatedUser) {
+        return res.status(400).json({ message: 'Invalid profile details', status: false });
+      }
+     const response = await User.findOneAndUpdate({_id: userId}, updatedUser)
+      res.status(200).json({ message: 'Profile updated successfully', status: true, updatedUser });
+    } catch (error) {
+      res.status(500).json({ message: 'Internal server error', status: false });
+    }
+  }
+
+  const getUpdateProfile = async (req, res) => {
+    const { userId } = req.query;
+    try {
+      const userDetail = await User.findOne({ _id: userId });
+      if (!userDetail) {
+        return res.status(404).json({ message: 'User not found', status: false });
+      }
+      res.status(200).json({ message: 'User profile fetched successfully', status: true, userDetail });
+    } catch (error) {
       res.status(500).json({ message: 'Internal server error', status: false });
     }
   }
@@ -199,7 +250,6 @@ const fetchProfilePicture = async (req, res) => {
     try { 
       const userDetail = await User.find({}).select("-password"); 
       const messages = await Message.find({users:{$all:[userId, receiverId]}})
-      console.log(messages)
         res.status(200).json({ status: true, messages, userDetail });
     } catch (error) {
         // console.error('Error fetching messages:', error);
@@ -243,7 +293,6 @@ const fetchProfilePicture = async (req, res) => {
 
   const deleteMessage = async (req, res) => {
     const { messageId } = req.params; 
-    console.log(messageId)
     if (!messageId) {
       return res.status(400).json({ status: false, message: 'Invalid message ID' });
     }
@@ -315,7 +364,7 @@ const handlePinMessage = async (req, res) => {
       if (!originalMessage.content) {
           return res.status(400).json({status: false, error: "Invalid message content", message: "Invalid message content"});
       }
-      const existingPinnedMessage = await Message.findOne({senderId, receiverId,  pinnedMessage: originalMessage.content });
+      const existingPinnedMessage = await Message.findOne({senderId, receiverId,  pinnedMessage: originalMessage.messageId });
       if(existingPinnedMessage){
         return res.status(400).json({
           status: false,
@@ -327,7 +376,7 @@ const handlePinMessage = async (req, res) => {
           senderId,
           content: originalMessage.content,
           messageId: originalMessage.messageId,
-          pinnedMessage: originalMessage.content,
+          pinnedMessage: originalMessage.messageId,
           receiverId,
           users: [senderId, receiverId]
       });
@@ -362,12 +411,13 @@ const handlePinMessage = async (req, res) => {
       return res.status(400).json({status: false,  error: "Invalid input", message: "Invalid input"});
     }
     try {
-      const existingPinnedMessage = await Message.findOne({senderId, receiverId, pinnedMessage: messageId});
+      const existingPinnedMessage = await Message.findOne({senderId, receiverId, messageId});
+      console.log(existingPinnedMessage)
       if (!existingPinnedMessage) {
         console.log('message not found');
         return res.status(404).json({status: false, error: "Message not found", message: "Message not found"});
       }
-      await Message.findByIdAndDelete(existingPinnedMessage.messageId);
+      await Message.findByIdAndDelete(existingPinnedMessage._id)
       res.status(200).json({status: "success", message: "Message unpinned successfully"});
     } 
     catch (error) {
@@ -392,4 +442,4 @@ const handlePinMessage = async (req, res) => {
   
 
 
-  module.exports = {registerUser, userLogin, getDashboard, getAllUser, fetchMessage, deleteMessage, forwardedMessage, handlePinMessage, fetchPinMessage, handleUnpinMessage, profilePicture, fetchProfilePicture};
+  module.exports = {registerUser, userLogin, getDashboard, getAllUser, fetchMessage, deleteMessage, forwardedMessage, handlePinMessage, fetchPinMessage, handleUnpinMessage, profilePicture, fetchProfilePicture, updateProfile, getUpdateProfile, googleAuth};

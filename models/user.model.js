@@ -9,15 +9,15 @@ const userSchema = new mongoose.Schema({
     // unique: true,
   },
   email: {type: String, required: true, unique: true},
-  password: {type: String, required: true},
-  number: {type: Number, required: true},
+  username: { type: String, required: true },
+  googleId: { type: String, required: true },
+  number: { type: String, required: false }, 
+  password: { type: String, required: false,  function () { return !this.googleId; } },
   socketId : {type:String, required: false},
   profilePicture: {type: String, required: false},
-
-  otp: {
-    type: String,
-    required: false,
-  },
+  aboutMe: {type: String, required: false, default: 'Hey there, i am using whatsapp'},
+  profileName: {type: String, required: false, default: 'Anonymous'},
+  otp: {type: String,required: false},
 
   pinnedMessages: [
     {
@@ -31,11 +31,11 @@ const userSchema = new mongoose.Schema({
 
 let saltRounds = 10
 userSchema.pre('save', function(next){
-    console.log(this.password, 'the existing password');
+    // console.log(this.password, 'the existing password');
     bcrypt.hash(this.password, saltRounds)
 
 .then((response) => {
-    console.log(response);
+    // console.log(response);
     this.password = response
     next()
 })
