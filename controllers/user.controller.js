@@ -6,21 +6,11 @@ const nodemailer = require ('nodemailer')
 const cloudinary = require('cloudinary')
 const { OAuth2Client } = require('google-auth-library');
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID); 
-// const http = require('http');
-// const socketIo = require('socket.io');
-// const mongoose = require('mongoose');
-// const Conversation = require('../models/conversation.model')
-
-
-// dotenv.config();
-
 
 const pass = process.env.PASS;
 const USERMAIL = process.env.USERMAIL;
 
-
 const transporter = nodemailer.createTransport({
-    // host: 'smtp.example.com',
     service: 'gmail',
     auth: {
       user: USERMAIL,
@@ -28,16 +18,12 @@ const transporter = nodemailer.createTransport({
     }
   })
   
-  const Captain =
-    "https://res.cloudinary.com/dbp6ovv7b/image/upload/v1715783819/tvf5apwj5bwmwf2qjfhh.png";
-
+  const Captain = "https://res.cloudinary.com/dbp6ovv7b/image/upload/v1715783819/tvf5apwj5bwmwf2qjfhh.png";
 
 const registerUser = (req, res) => {
     let form = new User(req.body);
     const { username, email, password, number } = req.body;
-    const newUser = new User({
-        username, email, password, number
-    })
+    const newUser = new User({username, email, password, number});
     newUser.save()
       .then((result) => {
         res.status(200).json({ status: true, message: "User signed up successfully", result });
@@ -70,9 +56,7 @@ const registerUser = (req, res) => {
       });
   }
 
-
   const userLogin = async (req, res) => {
-    // console.log(req.body);
     const { password, email } = req.body;
     try {
       const user = await User.findOne({ email });
@@ -86,7 +70,6 @@ const registerUser = (req, res) => {
           } else {
             if (same) {
               const token = jwt.sign({ email }, secrete, { expiresIn: "5d" });
-              // console.log(token);
               res.status(200).json({ message: "User signed in successfully", status: true, token, user });
             } else {
               res.status(401).json({ message: "Wrong password, please type the correct password", status: false });
@@ -99,7 +82,6 @@ const registerUser = (req, res) => {
         res.status(404).json({ message: "Wrong email, please type the correct email", status: false });
       }
     } catch (err) {
-      console.error(err);
       res.status(500).json({ message: "Server error", status: false });
     }
   }
@@ -111,7 +93,6 @@ const googleAuth = async (req, res) => {
     if (!googleToken) {
       return res.status(400).json({ message: "Google token is required" });
     }
-    
     // Verify Google token and create JWT for the user
     const ticket = await client.verifyIdToken({
       idToken: googleToken,
@@ -225,9 +206,7 @@ const fetchProfilePicture = async (req, res) => {
 
   const getAllUser = (socket) => {
     socket.on("getUsers", async ({ token }) => {
-      
       const secret = process.env.SECRET;
-  
       try {
         const result = jwt.verify(token, secret);
         // Update the user's socketId in the database to keep track of the connection
@@ -257,40 +236,6 @@ const fetchProfilePicture = async (req, res) => {
     }
   };
 
-//   const fetchMessage = async (req, res) => {
-//     const { userId, receiverId, messageId } = req.query;
-
-//     try {
-//         // Build the query for messages
-//         const query = {
-//             users: { $all: [userId, receiverId] }
-//         };
-
-//         // If messageId is provided, use it to fetch a specific message
-//         if (messageId) {
-//             query.messageId = messageId; // Use the custom messageId field
-//         }
-
-//         // Fetch messages based on the constructed query
-//         const messages = await Message.find(query);
-
-//         // Fetch user details excluding password
-//         const userDetail = await User.find({}).select("-password");
-
-//         res.status(200).json({ 
-//             status: true, 
-//             messages, 
-//             userDetail 
-//         });
-//     } catch (error) {
-//         console.error('Error fetching messages:', error);
-//         res.status(500).json({ 
-//             status: false, 
-//             error: 'Error fetching messages' 
-//         });
-//     }
-// };
-
   const deleteMessage = async (req, res) => {
     const { messageId } = req.params; 
     if (!messageId) {
@@ -307,14 +252,10 @@ const fetchProfilePicture = async (req, res) => {
 
   const forwardedMessage = async (req, res) => {
     const userDetail = await User.find({}).select("-password"); 
-    console.log(userDetail);
     const { messageId, senderId, receiverId } = req.body;
-    console.log(messageId, senderId, receiverId);
-
     if (!messageId || !senderId || !receiverId || receiverId.length === 0) {
         return res.status(400).json({ error: "Invalid input" });
     }
-
     try {
         // Find the original message
         const originalMessage = await Message.findById(messageId);
@@ -331,7 +272,6 @@ const fetchProfilePicture = async (req, res) => {
                 forwardedFrom: originalMessage.senderId,
                 receiverId: receiverId,
             });
-
             await newMessage.save();
             forwardedMessages.push(newMessage);
         }
@@ -341,7 +281,6 @@ const fetchProfilePicture = async (req, res) => {
             forwardedMessages,
         });
     } catch (error) {
-        console.error("Error forwarding message:", error);
         res.status(500).json({ error: "Internal server error" });
     }
 }
@@ -412,16 +351,13 @@ const handlePinMessage = async (req, res) => {
     }
     try {
       const existingPinnedMessage = await Message.findOne({senderId, receiverId, messageId});
-      console.log(existingPinnedMessage)
       if (!existingPinnedMessage) {
-        console.log('message not found');
         return res.status(404).json({status: false, error: "Message not found", message: "Message not found"});
       }
       await Message.findByIdAndDelete(existingPinnedMessage._id)
       res.status(200).json({status: "success", message: "Message unpinned successfully"});
     } 
     catch (error) {
-      console.error("Error pinning message:", error);
       res.status(500).json({status: false, error: "Internal server error", message: "Internal server error"});
     }
   }
