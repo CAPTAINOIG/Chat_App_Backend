@@ -80,6 +80,20 @@ app.get('/health', (req, res) => {
     message: 'Server is running',
     timestamp: new Date().toISOString(),
     environment: config.nodeEnv,
+    port: config.port,
+  });
+});
+
+// Root endpoint for Render health checks
+app.get('/', (req, res) => {
+  res.json({
+    success: true,
+    message: 'Chat Backend API is running',
+    version: '2.0.0',
+    endpoints: {
+      health: '/health',
+      api: '/api/user',
+    },
   });
 });
 
@@ -97,9 +111,10 @@ app.use(notFoundHandler);
 app.use(errorHandler);
 
 // Start server
-server.listen(config.port, () => {
-  logger.info(`Server running on port ${config.port} in ${config.nodeEnv} mode`);
-  console.log(`🚀 Server running on http://localhost:${config.port}`);
+const HOST = config.nodeEnv === 'production' ? '0.0.0.0' : 'localhost';
+server.listen(config.port, HOST, () => {
+  logger.info(`Server running on ${HOST}:${config.port} in ${config.nodeEnv} mode`);
+  console.log(`🚀 Server running on http://${HOST}:${config.port}`);
   console.log(`📡 Socket.io ready for connections`);
 });
 

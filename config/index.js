@@ -5,7 +5,7 @@ module.exports = {
   nodeEnv: process.env.NODE_ENV || 'development',
   
   mongodb: {
-    uri: process.env.MONGODB_URI,
+    uri: process.env.MONGODB_URI || process.env.URI, // Fallback to old URI
   },
   
   jwt: {

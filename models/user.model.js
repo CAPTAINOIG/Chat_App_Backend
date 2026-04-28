@@ -112,8 +112,6 @@ userSchema.methods.toPublicJSON = function() {
 };
 
 // Indexes for performance (using schema.index() method only)
-userSchema.index({ email: 1 });
-userSchema.index({ googleId: 1 });
 userSchema.index({ isOnline: 1 });
 
 const User = mongoose.model('User', userSchema);

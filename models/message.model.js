@@ -64,7 +64,6 @@ const messageSchema = new mongoose.Schema({
 // Indexes for performance (using schema.index() method only)
 messageSchema.index({ senderId: 1, receiverId: 1, timestamp: -1 });
 messageSchema.index({ users: 1, timestamp: -1 });
-messageSchema.index({ messageId: 1 }, { unique: true });
 
 const Message = mongoose.model('Message', messageSchema);
 
