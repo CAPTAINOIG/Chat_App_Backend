@@ -1,155 +1,124 @@
-const express = require("express");
-const http = require("http");
-const socketIo = require("socket.io");
-const cors = require("cors");
-// const mongoose = require('mongoose');
-const bodyParser = require("body-parser");
+const express = require('express');
+const http = require('http');
+const { Server } = require('socket.io');
+const cors = require('cors');
+const helmet = require('helmet');
+const morgan = require('morgan');
 
-require("./connection/mongoose.connection");
+const config = require('./config');
+const connectDB = require('./connection/mongoose.connection');
+const logger = require('./utils/logger');
+const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
+const { apiLimiter } = require('./middleware/rateLimiter');
+const SocketHandler = require('./socket/socketHandler');
 
+// Routes
+const userRouter = require('./routes/user.route');
+
+// Initialize Express app
 const app = express();
-
-app.use(express.json({ limit: "50mb" }));
-app.use(bodyParser.urlencoded({ extended: true }));
 const server = http.createServer(app);
 
-const dotenv = require("dotenv");
-const { Server } = require("socket.io");
-const cloudinary = require("cloudinary");
-
-const Message = require("./models/message.model");
-const { getAllUser } = require("./controllers/user.controller");
-const User = require("./models/user.model");
-const userRouter = require("./routes/user.route");
-
-dotenv.config();
-
+// Initialize Socket.io
 const io = new Server(server, {
   cors: {
-    // Your frontend URL
-    origin: "*",
-    methods: ["GET", "POST", "DELETE", "PUT"],
-  },
-});
-
-app.use(
-  cors({
-    origin: "*",
-    methods: ["GET", "POST", "DELETE", "PUT"],
+    origin: config.nodeEnv === 'development' ? true : config.cors.origin,
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
     credentials: true,
-  })
-);
-
-app.use("/user", userRouter);
-
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
+  },
+  pingTimeout: 60000,
+  pingInterval: 25000,
 });
 
-const onlineUsers = new Map();
+// Connect to database
+connectDB();
 
-io.on("connection", (socket) => {
-//   console.log("✅ User connected:", socket.id);
-  getAllUser(socket);
-  // Listen for 'user-online' event from client
-  socket.on("user-online", (userId) => {
-    onlineUsers.set(userId, socket.id);
-    updateOnlineUsers();
-  });
+// Security middleware
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
+}));
 
-  socket.on("typing", ({ senderId, receiverId }) => {
-    const receiverSocketId = onlineUsers.get(receiverId);
-    if (receiverSocketId) {
-      io.to(receiverSocketId).emit("typing", { senderId, receiverId } );
+// CORS - Allow all origins in development
+const corsOptions = config.nodeEnv === 'development' 
+  ? {
+      origin: true, // Allow all origins in development
+      methods: ['GET', 'POST', 'PUT', 'DELETE'],
+      credentials: true,
     }
+  : {
+      origin: config.cors.origin,
+      methods: ['GET', 'POST', 'PUT', 'DELETE'],
+      credentials: config.cors.credentials,
+    };
+
+app.use(cors(corsOptions));
+
+// Body parsing middleware
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Logging middleware
+if (config.nodeEnv === 'development') {
+  app.use(morgan('dev'));
+} else {
+  app.use(morgan('combined', {
+    stream: {
+      write: (message) => logger.info(message.trim()),
+    },
+  }));
+}
+
+// Rate limiting (disabled in development)
+if (config.nodeEnv === 'production') {
+  app.use('/api/', apiLimiter);
+}
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({
+    success: true,
+    message: 'Server is running',
+    timestamp: new Date().toISOString(),
+    environment: config.nodeEnv,
   });
-
-  socket.on("stopTyping", ({ senderId, receiverId }) => {
-    const receiverSocketId = onlineUsers.get(receiverId);
-    if (receiverSocketId) {
-      io.to(receiverSocketId).emit("stopTyping", { senderId, receiverId } );
-    }
-  });
-
-  socket.on(
-    "chat message",
-    async ({ messageId, senderId, receiverId, content, replyTo }) => {
-      const data = {
-        messageId,
-        senderId,
-        receiverId,
-        content,
-        users: [senderId, receiverId],
-        replyTo,
-      };
-      try {
-        // Create a new message
-        const message = new Message({
-          senderId,
-          receiverId,
-          content,
-          replyTo,
-          users: [senderId, receiverId],
-          messageId,
-        });
-        const savedMessage = await message.save();
-        // console.log('Message saved:', savedMessage);
-        // Find the receiver of the chat message and send the message to that specific user through their socket connection.
-        const user = await User.findOne({ _id: receiverId });
-        const receiverSocketId = onlineUsers.get(receiverId) || user.socketId;
-        if (receiverSocketId) {
-          io.to(receiverSocketId).emit("recievemessage", {
-            senderId,
-            receiverId,
-            content,
-            replyTo,
-            timestamp: savedMessage.timestamp,
-            messageId,
-          });
-        }
-        // // Emit the received message to the receiver's socket
-        // io.to(user.socketId).emit('recievemessage', { senderId, receiverId, content, timestamp: savedMessage.timestamp });
-        // Send a success response back to the client through the socket
-        socket.emit("messageSent", {
-          success: true,
-          message: "Message sent successfully",
-          userMessage: {
-            senderId,
-            receiverId,
-            content,
-            messageId,
-            users: [{ senderId, receiverId }],
-          },
-        });
-      } catch (error) {
-        console.error("Error saving message:", error);
-        // Send an error response back to the client through the socket
-        socket.emit("messageError", { success: false, error: error.message });
-      }
-    }
-  );
-
-  // Listen for 'disconnect' event when a user disconnects
-  socket.on("disconnect", () => {
-    // console.log('User disconnected:', socket.id);
-    for (let [userId, sockId] of onlineUsers.entries()) {
-      if (sockId === socket.id) {
-        // console.log(`User ${userId} with socket ID ${socket.id} is now offline`);
-        onlineUsers.delete(userId);
-        break;
-      }
-    }
-    updateOnlineUsers();
-  });
-
-  function updateOnlineUsers() {
-    const onlineUserIds = Array.from(onlineUsers.keys());
-    console.log('Online users:', onlineUserIds);
-    io.emit("update-online-users", onlineUserIds);
-  }
 });
 
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {});
+// API routes
+app.use('/api/user', userRouter);
+
+// Initialize Socket.io handlers
+const socketHandler = new SocketHandler(io);
+socketHandler.initialize();
+
+// 404 handler
+app.use(notFoundHandler);
+
+// Global error handler
+app.use(errorHandler);
+
+// Start server
+server.listen(config.port, () => {
+  logger.info(`Server running on port ${config.port} in ${config.nodeEnv} mode`);
+  console.log(`🚀 Server running on http://localhost:${config.port}`);
+  console.log(`📡 Socket.io ready for connections`);
+});
+
+// Graceful shutdown
+process.on('SIGTERM', () => {
+  logger.info('SIGTERM signal received: closing HTTP server');
+  server.close(() => {
+    logger.info('HTTP server closed');
+    process.exit(0);
+  });
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+process.on('uncaughtException', (error) => {
+  logger.error('Uncaught Exception:', error);
+  process.exit(1);
+});
+
+module.exports = { app, server, io };

@@ -1,30 +1,56 @@
-const express = require ('express')
-const router = express.Router()
+const express = require('express');
+const router = express.Router();
 
-const {registerUser, userLogin, getDashboard, googleAuth, fetchMessage, deleteMessage, forwardedMessage, handlePinMessage, fetchPinMessage, handleUnpinMessage, profilePicture, fetchProfilePicture, updateProfile, getUpdateProfile} = require('../controllers/user.controller')
+const {
+  registerUser,
+  userLogin,
+  googleAuth,
+  getDashboard,
+  fetchMessage,
+  deleteMessage,
+  forwardedMessage,
+  handlePinMessage,
+  handleUnpinMessage,
+  fetchPinMessage,
+  profilePicture,
+  fetchProfilePicture,
+  updateProfile,
+  getUpdateProfile,
+  searchUsers,
+  getUnreadCount,
+  markMessagesAsRead,
+} = require('../controllers/user.controller');
 
-router.post('/signup', registerUser)
-router.post('/signin', userLogin)
-router.post('/messages/forward', forwardedMessage)
-router.post('/pinMessage', handlePinMessage)
-router.post('/unpinMessage', handleUnpinMessage)
-router.post('/googleAuth', googleAuth)
-router.post('/profilePicture', profilePicture)
-router.put('/updateProfile/:userId', updateProfile)
+const { authenticate } = require('../middleware/auth');
+const { authLimiter } = require('../middleware/rateLimiter');
+const { userValidators, messageValidators, validate } = require('../validators/user.validator');
 
-router.get('/dashboard', getDashboard)
-router.get('/getMessage', fetchMessage)
-router.get('/getPinMessage', fetchPinMessage)
-router.get('/fetchPicture', fetchProfilePicture)
-router.get('/getUpdateProfile', getUpdateProfile)
+// Public routes (no authentication required)
+router.post('/signup', validate(userValidators.register), registerUser);
+router.post('/signin', validate(userValidators.login), userLogin);
+router.post('/googleAuth', validate(userValidators.googleAuth), googleAuth);
 
-router.delete('/deleteMessage/:messageId', deleteMessage)
+// Protected routes (authentication required)
+router.use(authenticate); // All routes below require authentication
 
+// User routes
+router.get('/dashboard', getDashboard);
+router.get('/search', searchUsers);
+router.get('/getUpdateProfile', getUpdateProfile);
+router.get('/fetchPicture', fetchProfilePicture);
+router.put('/updateProfile/:userId', validate(userValidators.updateProfile), updateProfile);
+router.post('/profilePicture', validate(userValidators.profilePicture), profilePicture);
 
+// Message routes
+router.get('/getMessage', fetchMessage);
+router.get('/unreadCount', getUnreadCount);
+router.post('/messages/read', markMessagesAsRead);
+router.post('/messages/forward', validate(messageValidators.forward), forwardedMessage);
+router.delete('/deleteMessage/:messageId', deleteMessage);
 
+// Pin message routes
+router.get('/getPinMessage', fetchPinMessage);
+router.post('/pinMessage', validate(messageValidators.pin), handlePinMessage);
+router.post('/unpinMessage', validate(messageValidators.unpin), handleUnpinMessage);
 
-
-
-
-
-module.exports = router
+module.exports = router;

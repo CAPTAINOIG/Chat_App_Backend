@@ -1,19 +1,70 @@
 const mongoose = require('mongoose');
 
 const messageSchema = new mongoose.Schema({
-    messageId: {type: String, required: false},
-    senderId: { type: String, required: true },
-    receiverId: { type: String, required: true },
-    users: { type: [String], required: true },
-    content: { type: String, required: true },
-    replyTo: { type: String, required: false },
-    isTyping: { type: Boolean, default: false },
-    pinnedMessage: { type: String, required: false },
-    // pinnedMessage: { type: mongoose.Schema.Types.ObjectId, ref: 'Message', required: false },
-    forwardedFrom: { type: String }, 
-    // forwardedFrom: { type: mongoose.Schema.Types.ObjectId, ref: 'Message' },
-    timestamp: { type: Date, default: Date.now }
+  messageId: {
+    type: String,
+    required: true,
+    unique: true,
+  },
+  senderId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true,
+  },
+  receiverId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true,
+  },
+  users: {
+    type: [mongoose.Schema.Types.ObjectId],
+    required: true,
+  },
+  content: {
+    type: String,
+    required: true,
+    maxlength: 5000,
+  },
+  replyTo: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Message',
+    required: false,
+  },
+  pinnedMessage: {
+    type: String,
+    required: false,
+  },
+  forwardedFrom: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: false,
+  },
+  isRead: {
+    type: Boolean,
+    default: false,
+  },
+  readAt: {
+    type: Date,
+  },
+  isDeleted: {
+    type: Boolean,
+    default: false,
+  },
+  deletedAt: {
+    type: Date,
+  },
+  timestamp: {
+    type: Date,
+    default: Date.now,
+  },
+}, {
+  timestamps: true,
 });
+
+// Indexes for performance (using schema.index() method only)
+messageSchema.index({ senderId: 1, receiverId: 1, timestamp: -1 });
+messageSchema.index({ users: 1, timestamp: -1 });
+messageSchema.index({ messageId: 1 }, { unique: true });
 
 const Message = mongoose.model('Message', messageSchema);
 
