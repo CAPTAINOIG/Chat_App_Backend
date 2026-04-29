@@ -20,6 +20,12 @@ const app = express();
 const server = http.createServer(app);
 
 // Initialize Socket.io
+// CORS - Allow multiple origins
+const allowedOrigins = [
+  'http://localhost:5173',
+  'https://captain-chat-app.netlify.app'
+];
+
 const io = new Server(server, {
   cors: {
     origin: config.nodeEnv === 'development' ? true : allowedOrigins,
@@ -38,11 +44,6 @@ app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
 }));
 
-// CORS - Allow multiple origins
-const allowedOrigins = [
-  'http://localhost:5173',
-  'https://captain-chat-app.netlify.app'
-];
 
 const corsOptions = config.nodeEnv === 'development' 
   ? {
