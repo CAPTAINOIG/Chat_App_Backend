@@ -22,7 +22,7 @@ const server = http.createServer(app);
 // Initialize Socket.io
 const io = new Server(server, {
   cors: {
-    origin: config.nodeEnv === 'development' ? true : config.cors.origin,
+    origin: config.nodeEnv === 'development' ? true : allowedOrigins,
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
     credentials: true,
   },
@@ -38,7 +38,12 @@ app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' },
 }));
 
-// CORS - Allow all origins in development
+// CORS - Allow multiple origins
+const allowedOrigins = [
+  'http://localhost:5173',
+  'https://captain-chat-app.netlify.app'
+];
+
 const corsOptions = config.nodeEnv === 'development' 
   ? {
       origin: true, // Allow all origins in development
@@ -46,9 +51,18 @@ const corsOptions = config.nodeEnv === 'development'
       credentials: true,
     }
   : {
-      origin: config.cors.origin,
+      origin: function (origin, callback) {
+        // Allow requests with no origin (like mobile apps or curl requests)
+        if (!origin) return callback(null, true);
+        
+        if (allowedOrigins.indexOf(origin) !== -1) {
+          callback(null, true);
+        } else {
+          callback(new Error('Not allowed by CORS'));
+        }
+      },
       methods: ['GET', 'POST', 'PUT', 'DELETE'],
-      credentials: config.cors.credentials,
+      credentials: true,
     };
 
 app.use(cors(corsOptions));
