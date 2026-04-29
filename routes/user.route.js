@@ -28,7 +28,11 @@ const { userValidators, messageValidators, validate } = require('../validators/u
 // Public routes (no authentication required)
 router.post('/signup', validate(userValidators.register), registerUser);
 router.post('/signin', validate(userValidators.login), userLogin);
-router.post('/googleAuth', validate(userValidators.googleAuth), googleAuth);
+
+// Google auth (only if configured)
+if (process.env.GOOGLE_CLIENT_ID) {
+  router.post('/googleAuth', validate(userValidators.googleAuth), googleAuth);
+}
 
 // Protected routes (authentication required)
 router.use(authenticate); // All routes below require authentication

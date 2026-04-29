@@ -5,7 +5,7 @@ const User = require('../models/user.model');
 const emailService = require('./email.service');
 const logger = require('../utils/logger');
 
-const googleClient = new OAuth2Client(config.google.clientId);
+const googleClient = config.google.clientId ? new OAuth2Client(config.google.clientId) : null;
 
 class AuthService {
   /**
@@ -97,6 +97,11 @@ class AuthService {
    */
   async googleAuth(googleToken) {
     try {
+      // Check if Google auth is configured
+      if (!googleClient) {
+        throw new Error('Google authentication is not configured');
+      }
+
       // Verify Google token
       const ticket = await googleClient.verifyIdToken({
         idToken: googleToken,
@@ -139,7 +144,19 @@ class AuthService {
       };
     } catch (error) {
       logger.error('Google auth error:', error);
-      throw new Error('Google authentication failed');
+      
+      // More specific error messages for debugging
+      if (error.message.includes('Token used too early')) {
+        throw new Error('Google token is not yet valid');
+      } else if (error.message.includes('Token used too late')) {
+        throw new Error('Google token has expired');
+      } else if (error.message.includes('Invalid token signature')) {
+        throw new Error('Invalid Google token signature');
+      } else if (error.message.includes('Wrong recipient')) {
+        throw new Error('Google token audience mismatch');
+      } else {
+        throw new Error(`Google authentication failed: ${error.message}`);
+      }
     }
   }
 
