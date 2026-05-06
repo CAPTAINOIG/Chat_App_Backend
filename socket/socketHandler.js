@@ -2,12 +2,16 @@ const Message = require('../models/message.model');
 const User = require('../models/user.model');
 const authService = require('../services/auth.service');
 const userService = require('../services/user.service');
+const messageService = require('../services/message.service');
 const logger = require('../utils/logger');
 
 class SocketHandler {
   constructor(io) {
     this.io = io;
-    this.onlineUsers = new Map();
+    this.onlineUsers = new Map(); // userId -> socketId
+    this.userSockets = new Map(); // socketId -> userId
+    this.messageQueue = new Map(); // userId -> [messages]
+    this.typingUsers = new Map(); // conversationId -> Set of userIds
   }
 
   /**
@@ -17,53 +21,120 @@ class SocketHandler {
     this.io.on('connection', (socket) => {
       logger.info(`User connected: ${socket.id}`);
 
-      // Handle user authentication and online status
-      this.handleUserOnline(socket);
+      try {
+        // Handle user authentication and online status
+        this.handleUserOnline(socket);
 
-      // Handle typing indicators
-      this.handleTyping(socket);
+        // Handle typing indicators
+        this.handleTyping(socket);
 
-      // Handle chat messages
-      this.handleChatMessage(socket);
+        // Handle chat messages
+        this.handleChatMessage(socket);
 
-      // Handle get users
-      this.handleGetUsers(socket);
+        // Handle get users
+        this.handleGetUsers(socket);
 
-      // Handle disconnect
-      this.handleDisconnect(socket);
+        // Handle message deletion
+        this.handleMessageDeletion(socket);
+
+        // Handle disconnect
+        this.handleDisconnect(socket);
+
+        // Handle socket errors
+        socket.on('error', (error) => {
+          logger.error(`Socket error for ${socket.id}:`, error);
+        });
+
+      } catch (error) {
+        logger.error('Error setting up socket handlers:', error);
+        socket.disconnect();
+      }
+    });
+
+    // Handle server-level socket errors
+    this.io.on('error', (error) => {
+      logger.error('Socket.io server error:', error);
     });
   }
 
   /**
-   * Handle user coming online
+   * Handle user coming online with improved connection management
    */
   handleUserOnline(socket) {
     socket.on('user-online', async (userId) => {
       try {
+        // Remove any existing connection for this user
+        const existingSocketId = this.onlineUsers.get(userId);
+        if (existingSocketId && existingSocketId !== socket.id) {
+          this.userSockets.delete(existingSocketId);
+        }
+
+        // Set new connection
         this.onlineUsers.set(userId, socket.id);
+        this.userSockets.set(socket.id, userId);
+        
         await userService.updateOnlineStatus(userId, true);
         await userService.updateSocketId(userId, socket.id);
         
+        // Deliver any queued messages
+        await this.deliverQueuedMessages(userId, socket.id);
+        
         this.broadcastOnlineUsers();
-        logger.info(`User ${userId} is now online`);
+        
+        socket.emit('userOnlineConfirmed', { userId, socketId: socket.id });
+        logger.info(`User ${userId} is now online with socket ${socket.id}`);
       } catch (error) {
         logger.error('User online error:', error);
+        socket.emit('error', { message: 'Failed to set online status' });
       }
     });
   }
 
   /**
-   * Handle typing indicators
+   * Handle typing indicators with improved management
    */
   handleTyping(socket) {
     socket.on('typing', ({ senderId, receiverId }) => {
+      const conversationId = [senderId, receiverId].sort().join('-');
+      
+      if (!this.typingUsers.has(conversationId)) {
+        this.typingUsers.set(conversationId, new Set());
+      }
+      
+      this.typingUsers.get(conversationId).add(senderId);
+      
       const receiverSocketId = this.onlineUsers.get(receiverId);
       if (receiverSocketId) {
         this.io.to(receiverSocketId).emit('typing', { senderId, receiverId });
       }
+
+      // Auto-stop typing after 3 seconds
+      setTimeout(() => {
+        const typingSet = this.typingUsers.get(conversationId);
+        if (typingSet) {
+          typingSet.delete(senderId);
+          if (typingSet.size === 0) {
+            this.typingUsers.delete(conversationId);
+          }
+        }
+        
+        if (receiverSocketId) {
+          this.io.to(receiverSocketId).emit('stopTyping', { senderId, receiverId });
+        }
+      }, 3000);
     });
 
     socket.on('stopTyping', ({ senderId, receiverId }) => {
+      const conversationId = [senderId, receiverId].sort().join('-');
+      const typingSet = this.typingUsers.get(conversationId);
+      
+      if (typingSet) {
+        typingSet.delete(senderId);
+        if (typingSet.size === 0) {
+          this.typingUsers.delete(conversationId);
+        }
+      }
+
       const receiverSocketId = this.onlineUsers.get(receiverId);
       if (receiverSocketId) {
         this.io.to(receiverSocketId).emit('stopTyping', { senderId, receiverId });
@@ -72,80 +143,179 @@ class SocketHandler {
   }
 
   /**
-   * Handle chat messages
+   * Handle chat messages with improved delivery system
    */
   handleChatMessage(socket) {
     socket.on('chat message', async ({ messageId, senderId, receiverId, content, replyTo }) => {
       try {
         // Validate input
-        if (!senderId || !receiverId || !content) {
+        if (!senderId || !receiverId || !content?.trim()) {
           socket.emit('messageError', {
+            messageId,
             success: false,
             error: 'Missing required fields',
           });
           return;
         }
 
-        // Convert string IDs to ObjectIds
-        const mongoose = require('mongoose');
-        const senderObjectId = new mongoose.Types.ObjectId(senderId);
-        const receiverObjectId = new mongoose.Types.ObjectId(receiverId);
+        // Rate limiting check (simple implementation)
+        const now = Date.now();
+        const userLastMessage = socket.lastMessageTime || 0;
+        if (now - userLastMessage < 100) { // 100ms between messages
+          socket.emit('messageError', {
+            messageId,
+            success: false,
+            error: 'Rate limit exceeded',
+          });
+          return;
+        }
+        socket.lastMessageTime = now;
 
-        // Create message
-        const message = new Message({
+        // Create message using service
+        const savedMessage = await messageService.createMessage({
           messageId: messageId || `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-          senderId: senderObjectId,
-          receiverId: receiverObjectId,
-          content,
-          replyTo: replyTo ? new mongoose.Types.ObjectId(replyTo) : null,
-          users: [senderObjectId, receiverObjectId],
+          senderId,
+          receiverId,
+          content: content.trim(),
+          replyTo,
         });
 
-        const savedMessage = await message.save();
-
-        // Populate the saved message with user data to match API response
-        await savedMessage.populate([
-          { path: 'senderId', select: 'username profilePicture' },
-          { path: 'receiverId', select: 'username profilePicture' }
-        ]);
+        // Prepare message data for transmission
+        const messageData = {
+          _id: savedMessage._id,
+          messageId: savedMessage.messageId,
+          senderId: savedMessage.senderId,
+          receiverId: savedMessage.receiverId,
+          content: savedMessage.content,
+          replyTo: savedMessage.replyTo,
+          timestamp: savedMessage.timestamp,
+          deliveryStatus: 'sent',
+        };
 
         // Send to receiver if online
         const receiverSocketId = this.onlineUsers.get(receiverId);
+        let delivered = false;
+
         if (receiverSocketId) {
-          this.io.to(receiverSocketId).emit('receiveMessage', {
-            _id: savedMessage._id,
-            messageId: savedMessage.messageId,
-            senderId: savedMessage.senderId,
-            receiverId: savedMessage.receiverId,
-            content: savedMessage.content,
-            replyTo: savedMessage.replyTo,
-            timestamp: savedMessage.timestamp,
-          });
+          try {
+            // Send with acknowledgment
+            this.io.to(receiverSocketId).emit('receiveMessage', messageData, (ack) => {
+              if (ack && ack.received) {
+                messageService.updateDeliveryStatus(savedMessage.messageId, 'delivered');
+                socket.emit('messageDelivered', { messageId: savedMessage.messageId });
+              }
+            });
+            delivered = true;
+          } catch (error) {
+            logger.error('Error sending to receiver:', error);
+          }
         }
 
-        // Confirm to sender
+        // If receiver not online, queue message
+        if (!delivered) {
+          this.queueMessage(receiverId, messageData);
+        }
+
+        // Confirm to sender immediately
         socket.emit('messageSent', {
           success: true,
           message: 'Message sent successfully',
-          userMessage: {
-            _id: savedMessage._id,
-            messageId: savedMessage.messageId,
-            senderId: savedMessage.senderId,
-            receiverId: savedMessage.receiverId,
-            content: savedMessage.content,
-            timestamp: savedMessage.timestamp,
-          },
+          messageData,
         });
 
-        logger.info(`Message sent from ${senderId} to ${receiverId}`);
+        logger.info(`Message sent from ${senderId} to ${receiverId} (delivered: ${delivered})`);
       } catch (error) {
         logger.error('Chat message error:', error);
         socket.emit('messageError', {
+          messageId,
           success: false,
           error: error.message,
         });
       }
     });
+
+    // Handle message acknowledgments
+    socket.on('messageReceived', async ({ messageId }) => {
+      try {
+        await messageService.updateDeliveryStatus(messageId, 'delivered');
+        
+        // Notify sender if online
+        const message = await Message.findOne({ messageId }).select('senderId');
+        if (message) {
+          const senderSocketId = this.onlineUsers.get(message.senderId.toString());
+          if (senderSocketId) {
+            this.io.to(senderSocketId).emit('messageDelivered', { messageId });
+          }
+        }
+      } catch (error) {
+        logger.error('Message received acknowledgment error:', error);
+      }
+    });
+
+    // Handle message read receipts
+    socket.on('messageRead', async ({ messageId }) => {
+      try {
+        await Message.findOneAndUpdate(
+          { messageId },
+          { 
+            isRead: true, 
+            readAt: new Date(),
+            deliveryStatus: 'read'
+          }
+        );
+
+        // Notify sender if online
+        const message = await Message.findOne({ messageId }).select('senderId');
+        if (message) {
+          const senderSocketId = this.onlineUsers.get(message.senderId.toString());
+          if (senderSocketId) {
+            this.io.to(senderSocketId).emit('messageRead', { messageId });
+          }
+        }
+      } catch (error) {
+        logger.error('Message read receipt error:', error);
+      }
+    });
+  }
+
+  /**
+   * Queue message for offline users
+   */
+  queueMessage(userId, messageData) {
+    if (!this.messageQueue.has(userId)) {
+      this.messageQueue.set(userId, []);
+    }
+    
+    const queue = this.messageQueue.get(userId);
+    queue.push(messageData);
+    
+    // Keep only last 50 messages in queue
+    if (queue.length > 50) {
+      queue.shift();
+    }
+  }
+
+  /**
+   * Deliver queued messages when user comes online
+   */
+  async deliverQueuedMessages(userId, socketId) {
+    const queue = this.messageQueue.get(userId);
+    if (!queue || queue.length === 0) return;
+
+    try {
+      // Send all queued messages
+      for (const messageData of queue) {
+        this.io.to(socketId).emit('receiveMessage', messageData);
+        await messageService.updateDeliveryStatus(messageData.messageId, 'delivered');
+      }
+
+      // Clear the queue
+      this.messageQueue.delete(userId);
+      
+      logger.info(`Delivered ${queue.length} queued messages to user ${userId}`);
+    } catch (error) {
+      logger.error('Error delivering queued messages:', error);
+    }
   }
 
   /**
@@ -179,16 +349,64 @@ class SocketHandler {
   }
 
   /**
-   * Handle user disconnect
+   * Handle message deletion via socket
+   */
+  handleMessageDeletion(socket) {
+    socket.on('deleteMessage', async ({ messageId, userId }) => {
+      try {
+        const deletedMessage = await messageService.deleteMessage(messageId, userId);
+        
+        // Notify receiver if online
+        const receiverSocketId = this.onlineUsers.get(deletedMessage.receiverId);
+        if (receiverSocketId) {
+          this.io.to(receiverSocketId).emit('messageDeleted', {
+            messageId: deletedMessage.messageId,
+            senderId: deletedMessage.senderId,
+            deletedAt: deletedMessage.deletedAt
+          });
+        }
+
+        // Confirm to sender
+        socket.emit('messageDeleteConfirmed', {
+          success: true,
+          messageId: deletedMessage.messageId
+        });
+
+        logger.info(`Message ${messageId} deleted by user ${userId}`);
+      } catch (error) {
+        logger.error('Delete message error:', error);
+        socket.emit('messageDeleteError', {
+          success: false,
+          messageId,
+          error: error.message
+        });
+      }
+    });
+  }
+
+  /**
+   * Handle user disconnect with improved cleanup
    */
   handleDisconnect(socket) {
-    socket.on('disconnect', async () => {
-      logger.info(`User disconnected: ${socket.id}`);
+    socket.on('disconnect', async (reason) => {
+      logger.info(`User disconnected: ${socket.id}, reason: ${reason}`);
 
-      // Find and remove user from online users
-      for (let [userId, sockId] of this.onlineUsers.entries()) {
-        if (sockId === socket.id) {
+      try {
+        // Find user by socket ID
+        const userId = this.userSockets.get(socket.id);
+        
+        if (userId) {
+          // Clean up user mappings
           this.onlineUsers.delete(userId);
+          this.userSockets.delete(socket.id);
+          
+          // Clean up typing indicators
+          for (const [conversationId, typingSet] of this.typingUsers.entries()) {
+            typingSet.delete(userId);
+            if (typingSet.size === 0) {
+              this.typingUsers.delete(conversationId);
+            }
+          }
           
           try {
             await userService.updateOnlineStatus(userId, false);
@@ -196,12 +414,16 @@ class SocketHandler {
           } catch (error) {
             logger.error('Update offline status error:', error);
           }
-          
-          break;
         }
-      }
 
-      this.broadcastOnlineUsers();
+        this.broadcastOnlineUsers();
+
+        // Clean up socket references
+        socket.removeAllListeners();
+        
+      } catch (error) {
+        logger.error('Disconnect handler error:', error);
+      }
     });
   }
 

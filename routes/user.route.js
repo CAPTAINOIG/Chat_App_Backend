@@ -6,6 +6,7 @@ const {
   userLogin,
   googleAuth,
   getDashboard,
+  getAllUser,
   fetchMessage,
   deleteMessage,
   forwardedMessage,

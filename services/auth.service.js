@@ -27,23 +27,12 @@ class AuthService {
    */
   async register(userData) {
     const { username, email, password, number } = userData;
-
-    // Check if user exists
     const existingUser = await User.findOne({ email });
     if (existingUser) {
       throw new Error('User already exists');
     }
-
-    // Create user
-    const user = new User({
-      username,
-      email,
-      password,
-      number,
-    });
-
+    const user = new User({ username, email, password, number });
     await user.save();
-
     // Send welcome email (non-blocking)
     emailService.sendWelcomeEmail(email, username).catch(err => {
       logger.error('Welcome email failed:', err);
@@ -51,7 +40,6 @@ class AuthService {
 
     // Generate token
     const token = this.generateToken(user);
-
     return {
       token,
       user: user.toPublicJSON(),
@@ -68,20 +56,16 @@ class AuthService {
       if (!user) {
         throw new Error('Invalid email or password');
       }
-
       // Validate password
       const isValid = await user.validatePassword(password);
       if (!isValid) {
         throw new Error('Invalid email or password');
       }
-
       // Update last seen
       user.lastSeen = new Date();
       await user.save();
-
       // Generate token
       const token = this.generateToken(user);
-
       return {
         token,
         user: user.toPublicJSON(),
@@ -101,15 +85,12 @@ class AuthService {
       if (!googleClient) {
         throw new Error('Google authentication is not configured');
       }
-
       // Verify Google token
       const ticket = await googleClient.verifyIdToken({
         idToken: googleToken,
         audience: config.google.clientId,
       });
-
       const { email, name, sub } = ticket.getPayload();
-
       // Find or create user
       let user = await User.findOne({ $or: [{ email }, { googleId: sub }] });
 
@@ -120,7 +101,6 @@ class AuthService {
           googleId: sub,
           password: Math.random().toString(36).slice(-8), // Random password for Google users
         });
-
         // Send welcome email
         emailService.sendWelcomeEmail(email, name).catch(err => {
           logger.error('Welcome email failed:', err);

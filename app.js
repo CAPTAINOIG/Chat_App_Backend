@@ -4,6 +4,7 @@ const { Server } = require('socket.io');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
+const mongoose = require('mongoose');
 
 const config = require('./config');
 const connectDB = require('./connection/mongoose.connection');
@@ -20,15 +21,9 @@ const app = express();
 const server = http.createServer(app);
 
 // Initialize Socket.io
-// CORS - Allow multiple origins
-const allowedOrigins = [
-  'http://localhost:5173',
-  'https://captain-chat-app.netlify.app'
-];
-
 const io = new Server(server, {
   cors: {
-    origin: config.nodeEnv === 'development' ? true : allowedOrigins,
+    origin: config.nodeEnv === 'development' ? true : ['http://localhost:5173', 'https://captain-chat-app.netlify.app'],
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
     credentials: true,
   },
@@ -45,28 +40,11 @@ app.use(helmet({
 }));
 
 
-const corsOptions = config.nodeEnv === 'development' 
-  ? {
-      origin: true, // Allow all origins in development
-      methods: ['GET', 'POST', 'PUT', 'DELETE'],
-      credentials: true,
-    }
-  : {
-      origin: function (origin, callback) {
-        // Allow requests with no origin (like mobile apps or curl requests)
-        if (!origin) return callback(null, true);
-        
-        if (allowedOrigins.indexOf(origin) !== -1) {
-          callback(null, true);
-        } else {
-          callback(new Error('Not allowed by CORS'));
-        }
-      },
-      methods: ['GET', 'POST', 'PUT', 'DELETE'],
-      credentials: true,
-    };
-
-app.use(cors(corsOptions));
+app.use(cors({
+  origin: config.nodeEnv === 'development' ? true : ['http://localhost:5173', 'https://captain-chat-app.netlify.app'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  credentials: true,
+}));
 
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
@@ -94,8 +72,6 @@ app.get('/health', (req, res) => {
     success: true,
     message: 'Server is running',
     timestamp: new Date().toISOString(),
-    environment: config.nodeEnv,
-    port: config.port,
   });
 });
 
@@ -118,6 +94,10 @@ app.use('/api/user', userRouter);
 // Initialize Socket.io handlers
 const socketHandler = new SocketHandler(io);
 socketHandler.initialize();
+
+// Make io and socketHandler available to routes
+app.set('io', io);
+app.set('socketHandler', socketHandler);
 
 // 404 handler
 app.use(notFoundHandler);
@@ -142,13 +122,26 @@ process.on('SIGTERM', () => {
   });
 });
 
+// Handle unhandled promise rejections
 process.on('unhandledRejection', (reason, promise) => {
   logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  // Don't exit the process, just log the error
+  console.error('Unhandled Promise Rejection:', reason);
 });
 
+// Handle uncaught exceptions
 process.on('uncaughtException', (error) => {
   logger.error('Uncaught Exception:', error);
-  process.exit(1);
+  console.error('Uncaught Exception:', error);
+  // Give the process time to log before exiting
+  setTimeout(() => {
+    process.exit(1);
+  }, 1000);
+});
+
+// Handle warnings
+process.on('warning', (warning) => {
+  logger.warn('Node.js Warning:', warning);
 });
 
 module.exports = { app, server, io };

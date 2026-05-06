@@ -10,7 +10,6 @@ const logger = require('../utils/logger');
  */
 const registerUser = asyncHandler(async (req, res) => {
   const result = await authService.register(req.body);
-  
   ResponseHandler.created(res, result, 'User registered successfully');
 });
 
@@ -19,9 +18,7 @@ const registerUser = asyncHandler(async (req, res) => {
  */
 const userLogin = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
-  
   const result = await authService.login(email, password);
-  
   ResponseHandler.success(res, result, 'Login successful');
 });
 
@@ -97,7 +94,23 @@ const deleteMessage = asyncHandler(async (req, res) => {
   const { messageId } = req.params;
   const userId = req.user._id.toString();
   
-  await messageService.deleteMessage(messageId, userId);
+  const deletedMessage = await messageService.deleteMessage(messageId, userId);
+  
+  // Emit socket event to notify receiver in real-time
+  const io = req.app.get('io');
+  if (io) {
+    const socketHandler = req.app.get('socketHandler');
+    if (socketHandler) {
+      const receiverSocketId = socketHandler.getOnlineUsers().get(deletedMessage.receiverId);
+      if (receiverSocketId) {
+        io.to(receiverSocketId).emit('messageDeleted', {
+          messageId: deletedMessage.messageId,
+          senderId: deletedMessage.senderId,
+          deletedAt: deletedMessage.deletedAt
+        });
+      }
+    }
+  }
   
   ResponseHandler.success(res, null, 'Message deleted successfully');
 });
@@ -118,9 +131,7 @@ const forwardedMessage = asyncHandler(async (req, res) => {
  */
 const handlePinMessage = asyncHandler(async (req, res) => {
   const { messageId, senderId, receiverId } = req.body;
-  
   const result = await messageService.pinMessage(messageId, senderId, receiverId);
-  
   ResponseHandler.success(res, { pinnedMessage: result }, 'Message pinned successfully');
 });
 
@@ -129,9 +140,7 @@ const handlePinMessage = asyncHandler(async (req, res) => {
  */
 const handleUnpinMessage = asyncHandler(async (req, res) => {
   const { messageId, senderId, receiverId } = req.body;
-  
   await messageService.unpinMessage(messageId, senderId, receiverId);
-  
   ResponseHandler.success(res, null, 'Message unpinned successfully');
 });
 
@@ -140,9 +149,7 @@ const handleUnpinMessage = asyncHandler(async (req, res) => {
  */
 const fetchPinMessage = asyncHandler(async (req, res) => {
   const { userId, receiverId } = req.query;
-  
   const result = await messageService.fetchPinnedMessages(userId, receiverId);
-  
   ResponseHandler.success(res, { pinnedMessages: result }, 'Pinned messages retrieved');
 });
 
@@ -151,10 +158,7 @@ const fetchPinMessage = asyncHandler(async (req, res) => {
  */
 const profilePicture = asyncHandler(async (req, res) => {
   const { userId, base64 } = req.body;
-  console.log('base64: ', base64);
-  
   const user = await userService.updateProfilePicture(userId, base64);
-  
   ResponseHandler.success(res, { user }, 'Profile picture updated successfully');
 });
 
@@ -163,10 +167,7 @@ const profilePicture = asyncHandler(async (req, res) => {
  */
 const fetchProfilePicture = asyncHandler(async (req, res) => {
   const { userId } = req.query;
-  
   const user = await userService.getUserById(userId);
-  console.log(user)
-  
   ResponseHandler.success(res, { url: user.profilePicture }, 'Profile picture retrieved');
 });
 
@@ -176,9 +177,7 @@ const fetchProfilePicture = asyncHandler(async (req, res) => {
 const updateProfile = asyncHandler(async (req, res) => {
   const { userId } = req.params;
   const updates = req.body;
-  
   const user = await userService.updateProfile(userId, updates);
-  
   ResponseHandler.success(res, { user }, 'Profile updated successfully');
 });
 
@@ -187,9 +186,7 @@ const updateProfile = asyncHandler(async (req, res) => {
  */
 const getUpdateProfile = asyncHandler(async (req, res) => {
   const { userId } = req.query;
-  
   const user = await userService.getUserById(userId);
-  
   ResponseHandler.success(res, { user }, 'User profile retrieved');
 });
 
@@ -198,13 +195,10 @@ const getUpdateProfile = asyncHandler(async (req, res) => {
  */
 const searchUsers = asyncHandler(async (req, res) => {
   const { q, page = 1, limit = 20 } = req.query;
-  
   if (!q) {
     return ResponseHandler.badRequest(res, 'Search query is required');
   }
-  
   const result = await userService.searchUsers(q, parseInt(page), parseInt(limit));
-  
   ResponseHandler.success(res, result, 'Search results retrieved');
 });
 
@@ -213,9 +207,7 @@ const searchUsers = asyncHandler(async (req, res) => {
  */
 const getUnreadCount = asyncHandler(async (req, res) => {
   const userId = req.user._id.toString();
-  
   const count = await messageService.getUnreadCount(userId);
-  
   ResponseHandler.success(res, { count }, 'Unread count retrieved');
 });
 
@@ -225,9 +217,7 @@ const getUnreadCount = asyncHandler(async (req, res) => {
 const markMessagesAsRead = asyncHandler(async (req, res) => {
   const { senderId } = req.body;
   const userId = req.user._id.toString();
-  
   await messageService.markAsRead(userId, senderId);
-  
   ResponseHandler.success(res, null, 'Messages marked as read');
 });
 
