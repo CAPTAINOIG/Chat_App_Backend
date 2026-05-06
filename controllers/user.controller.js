@@ -27,9 +27,7 @@ const userLogin = asyncHandler(async (req, res) => {
  */
 const googleAuth = asyncHandler(async (req, res) => {
   const { googleToken } = req.body;
-  
   const result = await authService.googleAuth(googleToken);
-  
   ResponseHandler.success(res, result, 'Google authentication successful');
 });
 
@@ -48,14 +46,11 @@ const getAllUser = (socket) => {
   socket.on('getUsers', async ({ token }) => {
     try {
       const user = await authService.verifyToken(token);
-      
       // Update socket ID
       await userService.updateSocketId(user._id, socket.id);
       await userService.updateOnlineStatus(user._id, true);
-      
       // Get all users
       const result = await userService.getAllUsers(1, 100, user._id);
-      
       socket.emit('getUsers', {
         success: true,
         message: 'Users retrieved',
@@ -76,14 +71,12 @@ const getAllUser = (socket) => {
  */
 const fetchMessage = asyncHandler(async (req, res) => {
   const { userId, receiverId, page = 1, limit = 50 } = req.query;
-  
   const result = await messageService.fetchMessages(
     userId,
     receiverId,
     parseInt(page),
     parseInt(limit)
   );
-  
   ResponseHandler.success(res, result, 'Messages retrieved');
 });
 
@@ -93,9 +86,7 @@ const fetchMessage = asyncHandler(async (req, res) => {
 const deleteMessage = asyncHandler(async (req, res) => {
   const { messageId } = req.params;
   const userId = req.user._id.toString();
-  
   const deletedMessage = await messageService.deleteMessage(messageId, userId);
-  
   // Emit socket event to notify receiver in real-time
   const io = req.app.get('io');
   if (io) {
@@ -111,7 +102,6 @@ const deleteMessage = asyncHandler(async (req, res) => {
       }
     }
   }
-  
   ResponseHandler.success(res, null, 'Message deleted successfully');
 });
 
@@ -120,9 +110,7 @@ const deleteMessage = asyncHandler(async (req, res) => {
  */
 const forwardedMessage = asyncHandler(async (req, res) => {
   const { messageId, senderId, receiverId } = req.body;
-  
   const result = await messageService.forwardMessage(messageId, senderId, receiverId);
-  
   ResponseHandler.success(res, { forwardedMessages: result }, 'Messages forwarded successfully');
 });
 

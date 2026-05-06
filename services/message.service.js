@@ -58,6 +58,7 @@ class MessageService {
         $match: {
           users: { $all: [userObjectId, receiverObjectId] },
           isDeleted: false,
+          pinnedMessage: { $exists: false }, // Exclude pinned message references
         }
       },
       {
@@ -117,6 +118,7 @@ class MessageService {
       Message.countDocuments({
         users: { $all: [userObjectId, receiverObjectId] },
         isDeleted: false,
+        pinnedMessage: { $exists: false }, // Exclude pinned message references
       })
     ]);
 
@@ -202,14 +204,29 @@ class MessageService {
   }
 
   /**
-   * Pin message
+   * Pin message (compatible with existing data)
    */
   async pinMessage(messageId, senderId, receiverId) {
-    const message = await Message.findOne({ messageId, senderId, receiverId });
+    // Prevent pinning of pin references
+    if (messageId.startsWith('pin-')) {
+      throw new Error('Cannot pin a pinned message reference');
+    }
+
+    // Find the original message
+    const message = await Message.findOne({ 
+      messageId,
+      $or: [
+        { senderId, receiverId },
+        { senderId: receiverId, receiverId: senderId }
+      ],
+      pinnedMessage: { $exists: false }, // Ensure it's not a pin reference
+    });
+    
     if (!message) {
       throw new Error('Message not found');
     }
-    // Check if already pinned
+
+    // Check if already pinned by this user (check existing format)
     const existingPin = await Message.findOne({
       senderId,
       receiverId,
@@ -217,52 +234,72 @@ class MessageService {
     });
 
     if (existingPin) {
-      throw new Error('Message already pinned');
+      throw new Error('Message already pinned by this user');
     }
 
-    // Create pinned reference
+    // Create a pin reference document (keeping existing format for compatibility)
     const pinnedMsg = new Message({
-      messageId: `pin-${messageId}`,
+      messageId: `pin-${messageId}-${senderId}`, // Unique pin ID per user
       senderId,
       receiverId,
       users: [senderId, receiverId],
       content: message.content,
-      pinnedMessage: messageId,
+      pinnedMessage: messageId, // Reference to original message
+      timestamp: message.timestamp, // Keep original timestamp
     });
+    
     await pinnedMsg.save();
+    
+    // Populate the response
+    await pinnedMsg.populate([
+      { path: 'senderId', select: 'username profilePicture' },
+      { path: 'receiverId', select: 'username profilePicture' }
+    ]);
+    
     return pinnedMsg;
   }
 
-  /**
-   * Unpin message
-   */
   async unpinMessage(messageId, senderId, receiverId) {
-    const pinnedMessage = await Message.findOne({
-      senderId,
-      receiverId,
-      messageId,
+    let pinnedMessage = await Message.findOne({
+      messageId: `pin-${messageId}-${senderId}`,
+      pinnedMessage: messageId,
     });
-
     if (!pinnedMessage) {
-      throw new Error('Pinned message not found');
+      pinnedMessage = await Message.findOne({
+        senderId,
+        receiverId,
+        pinnedMessage: messageId, // This finds pin references, not original messages
+      });
     }
-
+    if (!pinnedMessage) {
+      throw new Error('Pinned message not found or you did not pin this message');
+    }
+    // Delete only the pin reference, not the original message
     await Message.findByIdAndDelete(pinnedMessage._id);
-
     return { success: true };
   }
 
-  /**
-   * Fetch pinned messages
-   */
   async fetchPinnedMessages(userId, receiverId) {
     const pinnedMessages = await Message.find({
-      senderId: userId,
-      receiverId,
-      pinnedMessage: { $exists: true },
+      $or: [
+        // New format
+        {
+          senderId: userId,
+          pinnedMessage: { $exists: true },
+          messageId: { $regex: `^pin-.*-${userId}$` },
+        },
+        // Existing format (for backward compatibility)
+        {
+          senderId: userId,
+          receiverId,
+          pinnedMessage: { $exists: true },
+          messageId: { $not: { $regex: '^pin-' } }, // Exclude new format to avoid duplicates
+        }
+      ]
     })
       .populate('senderId', 'username profilePicture')
-      .populate('receiverId', 'username profilePicture');
+      .populate('receiverId', 'username profilePicture')
+      .sort({ timestamp: -1 });
 
     return pinnedMessages;
   }
