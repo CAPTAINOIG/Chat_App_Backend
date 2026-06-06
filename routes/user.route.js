@@ -20,6 +20,7 @@ const {
   searchUsers,
   getUnreadCount,
   markMessagesAsRead,
+  getCallHistory,
 } = require('../controllers/user.controller');
 
 const { authenticate } = require('../middleware/auth');
@@ -52,6 +53,9 @@ router.get('/unreadCount', getUnreadCount);
 router.post('/messages/read', markMessagesAsRead);
 router.post('/messages/forward', validate(messageValidators.forward), forwardedMessage);
 router.delete('/deleteMessage/:messageId', deleteMessage);
+
+// Call routes
+router.get('/callHistory', getCallHistory);
 
 // Pin message routes
 router.get('/getPinMessage', fetchPinMessage);

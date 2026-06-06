@@ -1,6 +1,3 @@
-/**
- * Standardized API response handler
- */
 class ResponseHandler {
   static success(res, data = null, message = 'Success', statusCode = 200) {
     return res.status(statusCode).json({

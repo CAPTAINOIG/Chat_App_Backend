@@ -3,6 +3,7 @@ const User = require('../models/user.model');
 const authService = require('../services/auth.service');
 const userService = require('../services/user.service');
 const messageService = require('../services/message.service');
+const callService = require('../services/call.service');
 const logger = require('../utils/logger');
 
 class SocketHandler {
@@ -12,6 +13,9 @@ class SocketHandler {
     this.userSockets = new Map(); // socketId -> userId
     this.messageQueue = new Map(); // userId -> [messages]
     this.typingUsers = new Map(); // conversationId -> Set of userIds
+    
+    // Start call cleanup timer
+    callService.startCleanupTimer();
   }
 
   /**
@@ -36,6 +40,12 @@ class SocketHandler {
 
         // Handle message deletion
         this.handleMessageDeletion(socket);
+
+        // Handle voice and video calls
+        this.handleCalls(socket);
+
+        // Handle WebRTC signaling
+        this.handleWebRTCSignaling(socket);
 
         // Handle disconnect
         this.handleDisconnect(socket);
@@ -385,6 +395,215 @@ class SocketHandler {
   }
 
   /**
+   * Handle voice and video calls
+   */
+  handleCalls(socket) {
+    // Initiate a call
+    socket.on('call:initiate', async ({ receiverId, callType }) => {
+      try {
+        const callerId = this.userSockets.get(socket.id);
+        if (!callerId) {
+          socket.emit('call:error', { error: 'User not authenticated' });
+          return;
+        }
+
+        // Check if caller is already in a call
+        if (callService.isUserInCall(callerId)) {
+          socket.emit('call:error', { error: 'You are already in a call' });
+          return;
+        }
+
+        // Check if receiver is already in a call
+        if (callService.isUserInCall(receiverId)) {
+          socket.emit('call:error', { error: 'User is already in a call' });
+          return;
+        }
+
+        // Create call
+        const call = callService.createCall(callerId, receiverId, callType);
+
+        // Notify receiver if online
+        const receiverSocketId = this.onlineUsers.get(receiverId);
+        if (receiverSocketId) {
+          this.io.to(receiverSocketId).emit('call:incoming', {
+            callId: call.callId,
+            callerId,
+            callerInfo: await userService.getUserById(callerId),
+            callType: call.callType,
+            timestamp: call.startTime,
+          });
+        } else {
+          // Receiver is offline, mark as missed
+          callService.markCallAsMissed(call.callId);
+          socket.emit('call:missed', { callId: call.callId });
+          return;
+        }
+
+        // Confirm to caller
+        socket.emit('call:initiated', {
+          callId: call.callId,
+          receiverId,
+          callType: call.callType,
+        });
+
+        logger.info(`Call initiated: ${call.callId} from ${callerId} to ${receiverId}`);
+      } catch (error) {
+        logger.error('Call initiate error:', error);
+        socket.emit('call:error', { error: error.message });
+      }
+    });
+
+    // Accept a call
+    socket.on('call:accept', async ({ callId }) => {
+      try {
+        const userId = this.userSockets.get(socket.id);
+        const call = callService.acceptCall(callId, userId);
+
+        // Notify caller
+        const callerSocketId = this.onlineUsers.get(call.callerId);
+        if (callerSocketId) {
+          this.io.to(callerSocketId).emit('call:accepted', {
+            callId: call.callId,
+            acceptedBy: userId,
+          });
+        }
+
+        // Confirm to receiver
+        socket.emit('call:accepted', {
+          callId: call.callId,
+          callerId: call.callerId,
+        });
+
+        logger.info(`Call accepted: ${callId} by ${userId}`);
+      } catch (error) {
+        logger.error('Call accept error:', error);
+        socket.emit('call:error', { error: error.message });
+      }
+    });
+
+    // Reject a call
+    socket.on('call:reject', async ({ callId }) => {
+      try {
+        const userId = this.userSockets.get(socket.id);
+        const call = callService.rejectCall(callId, userId);
+
+        // Notify caller
+        const callerSocketId = this.onlineUsers.get(call.callerId);
+        if (callerSocketId) {
+          this.io.to(callerSocketId).emit('call:rejected', {
+            callId: call.callId,
+            rejectedBy: userId,
+          });
+        }
+
+        logger.info(`Call rejected: ${callId} by ${userId}`);
+      } catch (error) {
+        logger.error('Call reject error:', error);
+        socket.emit('call:error', { error: error.message });
+      }
+    });
+
+    // End a call
+    socket.on('call:end', async ({ callId }) => {
+      try {
+        const userId = this.userSockets.get(socket.id);
+        const call = callService.endCall(callId, userId);
+
+        // Notify all participants
+        call.participants.forEach(participantId => {
+          if (participantId !== userId) {
+            const participantSocketId = this.onlineUsers.get(participantId);
+            if (participantSocketId) {
+              this.io.to(participantSocketId).emit('call:ended', {
+                callId: call.callId,
+                endedBy: userId,
+                duration: call.duration,
+              });
+            }
+          }
+        });
+
+        // Confirm to caller
+        socket.emit('call:ended', {
+          callId: call.callId,
+          duration: call.duration,
+        });
+
+        logger.info(`Call ended: ${callId} by ${userId}`);
+      } catch (error) {
+        logger.error('Call end error:', error);
+        socket.emit('call:error', { error: error.message });
+      }
+    });
+
+    // Get call status
+    socket.on('call:status', ({ callId }) => {
+      try {
+        const call = callService.getCall(callId);
+        socket.emit('call:status', call || { error: 'Call not found' });
+      } catch (error) {
+        socket.emit('call:error', { error: error.message });
+      }
+    });
+  }
+
+  /**
+   * Handle WebRTC signaling
+   */
+  handleWebRTCSignaling(socket) {
+    // Handle offer
+    socket.on('webrtc:offer', ({ callId, offer, targetUserId }) => {
+      try {
+        const targetSocketId = this.onlineUsers.get(targetUserId);
+        if (targetSocketId) {
+          this.io.to(targetSocketId).emit('webrtc:offer', {
+            callId,
+            offer,
+            fromUserId: this.userSockets.get(socket.id),
+          });
+        }
+      } catch (error) {
+        logger.error('WebRTC offer error:', error);
+        socket.emit('webrtc:error', { error: error.message });
+      }
+    });
+
+    // Handle answer
+    socket.on('webrtc:answer', ({ callId, answer, targetUserId }) => {
+      try {
+        const targetSocketId = this.onlineUsers.get(targetUserId);
+        if (targetSocketId) {
+          this.io.to(targetSocketId).emit('webrtc:answer', {
+            callId,
+            answer,
+            fromUserId: this.userSockets.get(socket.id),
+          });
+        }
+      } catch (error) {
+        logger.error('WebRTC answer error:', error);
+        socket.emit('webrtc:error', { error: error.message });
+      }
+    });
+
+    // Handle ICE candidate
+    socket.on('webrtc:ice-candidate', ({ callId, candidate, targetUserId }) => {
+      try {
+        const targetSocketId = this.onlineUsers.get(targetUserId);
+        if (targetSocketId) {
+          this.io.to(targetSocketId).emit('webrtc:ice-candidate', {
+            callId,
+            candidate,
+            fromUserId: this.userSockets.get(socket.id),
+          });
+        }
+      } catch (error) {
+        logger.error('WebRTC ICE candidate error:', error);
+        socket.emit('webrtc:error', { error: error.message });
+      }
+    });
+  }
+
+  /**
    * Handle user disconnect with improved cleanup
    */
   handleDisconnect(socket) {
@@ -405,6 +624,32 @@ class SocketHandler {
             typingSet.delete(userId);
             if (typingSet.size === 0) {
               this.typingUsers.delete(conversationId);
+            }
+          }
+          
+          // Handle active calls
+          const activeCall = callService.getUserCall(userId);
+          if (activeCall && ['calling', 'accepted'].includes(activeCall.status)) {
+            // End the call
+            try {
+              const call = callService.endCall(activeCall.callId, userId);
+              
+              // Notify other participants
+              activeCall.participants.forEach(participantId => {
+                if (participantId !== userId) {
+                  const participantSocketId = this.onlineUsers.get(participantId);
+                  if (participantSocketId) {
+                    this.io.to(participantSocketId).emit('call:ended', {
+                      callId: call.callId,
+                      endedBy: userId,
+                      reason: 'disconnect',
+                      duration: call.duration,
+                    });
+                  }
+                }
+              });
+            } catch (error) {
+              logger.error('Error ending call on disconnect:', error);
             }
           }
           

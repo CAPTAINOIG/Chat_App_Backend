@@ -3,45 +3,31 @@ const ResponseHandler = require('../utils/responseHandler');
 const authService = require('../services/auth.service');
 const userService = require('../services/user.service');
 const messageService = require('../services/message.service');
+const callService = require('../services/call.service');
 const logger = require('../utils/logger');
 
-/**
- * Register new user
- */
 const registerUser = asyncHandler(async (req, res) => {
   const result = await authService.register(req.body);
   ResponseHandler.created(res, result, 'User registered successfully');
 });
 
-/**
- * User login
- */
 const userLogin = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
   const result = await authService.login(email, password);
   ResponseHandler.success(res, result, 'Login successful');
 });
 
-/**
- * Google OAuth authentication
- */
 const googleAuth = asyncHandler(async (req, res) => {
   const { googleToken } = req.body;
   const result = await authService.googleAuth(googleToken);
   ResponseHandler.success(res, result, 'Google authentication successful');
 });
 
-/**
- * Get dashboard (user profile)
- */
 const getDashboard = asyncHandler(async (req, res) => {
   // User is already attached by auth middleware
   ResponseHandler.success(res, { user: req.user }, 'Dashboard data retrieved');
 });
 
-/**
- * Get all users (Socket.io handler)
- */
 const getAllUser = (socket) => {
   socket.on('getUsers', async ({ token }) => {
     try {
@@ -66,9 +52,6 @@ const getAllUser = (socket) => {
   });
 };
 
-/**
- * Fetch messages between users
- */
 const fetchMessage = asyncHandler(async (req, res) => {
   const { userId, receiverId, page = 1, limit = 50 } = req.query;
   const result = await messageService.fetchMessages(
@@ -80,9 +63,6 @@ const fetchMessage = asyncHandler(async (req, res) => {
   ResponseHandler.success(res, result, 'Messages retrieved');
 });
 
-/**
- * Delete message
- */
 const deleteMessage = asyncHandler(async (req, res) => {
   const { messageId } = req.params;
   const userId = req.user._id.toString();
@@ -105,18 +85,12 @@ const deleteMessage = asyncHandler(async (req, res) => {
   ResponseHandler.success(res, null, 'Message deleted successfully');
 });
 
-/**
- * Forward message
- */
 const forwardedMessage = asyncHandler(async (req, res) => {
   const { messageId, senderId, receiverId } = req.body;
   const result = await messageService.forwardMessage(messageId, senderId, receiverId);
   ResponseHandler.success(res, { forwardedMessages: result }, 'Messages forwarded successfully');
 });
 
-/**
- * Pin message
- */
 const handlePinMessage = asyncHandler(async (req, res) => {
   const { messageId, senderId, receiverId } = req.body;
   const result = await messageService.pinMessage(messageId, senderId, receiverId);
@@ -209,6 +183,15 @@ const markMessagesAsRead = asyncHandler(async (req, res) => {
   ResponseHandler.success(res, null, 'Messages marked as read');
 });
 
+/**
+ * Get call history
+ */
+const getCallHistory = asyncHandler(async (req, res) => {
+  const userId = req.user._id.toString();
+  const callHistory = callService.getCallHistory(userId);
+  ResponseHandler.success(res, { callHistory }, 'Call history retrieved');
+});
+
 module.exports = {
   registerUser,
   userLogin,
@@ -228,4 +211,5 @@ module.exports = {
   searchUsers,
   getUnreadCount,
   markMessagesAsRead,
+  getCallHistory,
 };
