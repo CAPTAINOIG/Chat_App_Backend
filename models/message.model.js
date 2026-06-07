@@ -72,7 +72,6 @@ const messageSchema = new mongoose.Schema({
 // Optimized indexes for better performance
 messageSchema.index({ users: 1, timestamp: -1 }); // Primary query index
 messageSchema.index({ senderId: 1, receiverId: 1, timestamp: -1 }); // Direct conversation index
-messageSchema.index({ messageId: 1 }); // Unique message lookup
 messageSchema.index({ receiverId: 1, isRead: 1 }); // Unread messages
 messageSchema.index({ receiverId: 1, deliveryStatus: 1 }); // Delivery status
 

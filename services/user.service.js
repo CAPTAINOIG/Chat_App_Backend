@@ -42,7 +42,7 @@ class UserService {
    * Get user by ID
    */
   async getUserById(userId) {
-    const user = await User.findById(userId).select('-password');
+    const user = await User.findById(userId).select('-password').lean();
     
     if (!user) {
       throw new Error('User not found');
@@ -168,6 +168,7 @@ class UserService {
   async getOnlineUsers() {
     const users = await User.find({ isOnline: true })
       .select('_id username profilePicture');
+      console.log(users)
 
     return users;
   }

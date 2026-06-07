@@ -50,6 +50,7 @@ class CallService {
    */
   async initiateCall(receiverId, callType = 'voice') {
     try {
+      console.log('[CallService] initiateCall called with receiverId:', receiverId, 'callType:', callType);
       if (this.isCallActive) {
         throw new Error('Already in a call');
       }
@@ -71,6 +72,7 @@ class CallService {
       }
 
       // Emit call initiate
+      console.log('[CallService] Emitting call:initiate');
       socketService.socket.emit('call:initiate', {
         receiverId,
         callType,
@@ -79,6 +81,7 @@ class CallService {
       return new Promise((resolve, reject) => {
         // Set up one-time listeners for call response
         const handleInitiated = (data) => {
+          console.log('[CallService] Received call:initiated:', data);
           this.currentCall = data;
           socketService.off('call:initiated', handleInitiated);
           socketService.off('call:error', handleError);
@@ -86,6 +89,7 @@ class CallService {
         };
 
         const handleError = (error) => {
+          console.error('[CallService] Received call:error:', error);
           this.endCall();
           socketService.off('call:initiated', handleInitiated);
           socketService.off('call:error', handleError);
@@ -96,6 +100,7 @@ class CallService {
         socketService.on('call:error', handleError);
       });
     } catch (error) {
+      console.error('[CallService] Error in initiateCall:', error);
       this.endCall();
       throw error;
     }
@@ -106,6 +111,7 @@ class CallService {
    */
   async acceptCall(callId) {
     try {
+      console.log('[CallService] acceptCall called with callId:', callId);
       if (this.isCallActive) {
         throw new Error('Already in a call');
       }
@@ -126,9 +132,11 @@ class CallService {
       }
 
       // Accept the call
+      console.log('[CallService] Emitting call:accept');
       socketService.socket.emit('call:accept', { callId });
 
     } catch (error) {
+      console.error('[CallService] Error in acceptCall:', error);
       this.endCall();
       throw error;
     }
@@ -138,6 +146,7 @@ class CallService {
    * Reject an incoming call
    */
   rejectCall(callId) {
+    console.log('[CallService] rejectCall called with callId:', callId);
     socketService.socket.emit('call:reject', { callId });
     this.currentCall = null;
   }
@@ -146,6 +155,7 @@ class CallService {
    * End the current call
    */
   endCall() {
+    console.log('[CallService] endCall called');
     if (this.currentCall) {
       socketService.socket.emit('call:end', { callId: this.currentCall.callId });
     }
@@ -158,6 +168,7 @@ class CallService {
    */
   async getUserMedia(includeVideo = false) {
     try {
+      console.log('[CallService] getUserMedia called with includeVideo:', includeVideo);
       const constraints = {
         audio: {
           echoCancellation: true,
@@ -172,6 +183,7 @@ class CallService {
       };
 
       this.localStream = await navigator.mediaDevices.getUserMedia(constraints);
+      console.log('[CallService] Local stream obtained:', this.localStream);
       
       // Emit event for UI to handle local stream
       this.emit('localStream', this.localStream);
@@ -187,28 +199,41 @@ class CallService {
    * Create WebRTC peer connection
    */
   createPeerConnection() {
+    console.log('[CallService] Creating peer connection');
     this.peerConnection = new RTCPeerConnection(this.rtcConfig);
 
     // Handle remote stream
     this.peerConnection.ontrack = (event) => {
+      console.log('[CallService] ontrack event received:', event);
       this.remoteStream = event.streams[0];
       this.emit('remoteStream', this.remoteStream);
     };
 
     // Handle ICE candidates
     this.peerConnection.onicecandidate = (event) => {
+      console.log('[CallService] onicecandidate event received:', event.candidate);
       if (event.candidate && this.currentCall) {
+        const targetUserId = this.getOtherUserId();
+        console.log('[CallService] Emitting webrtc:ice-candidate to targetUserId:', targetUserId);
         socketService.socket.emit('webrtc:ice-candidate', {
           callId: this.currentCall.callId,
           candidate: event.candidate,
-          targetUserId: this.getOtherUserId(),
+          targetUserId,
         });
       }
+    };
+
+    // Handle ICE connection state changes
+    this.peerConnection.oniceconnectionstatechange = () => {
+      const state = this.peerConnection.iceConnectionState;
+      console.log('[CallService] ICE connection state changed:', state);
+      this.emit('iceConnectionState', state);
     };
 
     // Handle connection state changes
     this.peerConnection.onconnectionstatechange = () => {
       const state = this.peerConnection.connectionState;
+      console.log('[CallService] Peer connection state changed:', state);
       this.emit('connectionState', state);
       
       if (state === 'failed' || state === 'disconnected' || state === 'closed') {
@@ -221,6 +246,7 @@ class CallService {
    * Handle incoming call
    */
   handleIncomingCall(data) {
+    console.log('[CallService] handleIncomingCall received:', data);
     this.currentCall = data;
     this.callType = data.callType;
     this.emit('incomingCall', data);
@@ -231,19 +257,33 @@ class CallService {
    */
   async handleCallAccepted(data) {
     try {
-      // Create and send offer
-      const offer = await this.peerConnection.createOffer();
-      await this.peerConnection.setLocalDescription(offer);
+      console.log('[CallService] handleCallAccepted received:', data);
+      
+      // Update currentCall with the latest data
+      this.currentCall = { ...this.currentCall, ...data };
+      console.log('[CallService] Updated currentCall:', this.currentCall);
 
-      socketService.socket.emit('webrtc:offer', {
-        callId: data.callId,
-        offer,
-        targetUserId: data.acceptedBy,
-      });
+      // If we're the caller, create and send offer
+      const currentUserId = socketService.userId;
+      if (this.currentCall.callerId === currentUserId) {
+        console.log('[CallService] Creating offer as caller');
+        // Create and send offer
+        const offer = await this.peerConnection.createOffer();
+        await this.peerConnection.setLocalDescription(offer);
+        console.log('[CallService] Offer created and set as local description:', offer);
+
+        const targetUserId = this.getOtherUserId();
+        console.log('[CallService] Emitting webrtc:offer to targetUserId:', targetUserId);
+        socketService.socket.emit('webrtc:offer', {
+          callId: data.callId,
+          offer,
+          targetUserId,
+        });
+      }
 
       this.emit('callAccepted', data);
     } catch (error) {
-      console.error('Error handling call accepted:', error);
+      console.error('[CallService] Error handling call accepted:', error);
       this.endCall();
     }
   }
@@ -252,6 +292,7 @@ class CallService {
    * Handle call rejected
    */
   handleCallRejected(data) {
+    console.log('[CallService] handleCallRejected received:', data);
     this.emit('callRejected', data);
     this.cleanup();
   }
@@ -260,6 +301,7 @@ class CallService {
    * Handle call ended
    */
   handleCallEnded(data) {
+    console.log('[CallService] handleCallEnded received:', data);
     this.emit('callEnded', data);
     this.cleanup();
   }
@@ -268,6 +310,7 @@ class CallService {
    * Handle call missed
    */
   handleCallMissed(data) {
+    console.log('[CallService] handleCallMissed received:', data);
     this.emit('callMissed', data);
     this.cleanup();
   }
@@ -276,6 +319,7 @@ class CallService {
    * Handle call error
    */
   handleCallError(error) {
+    console.error('[CallService] handleCallError received:', error);
     this.emit('callError', error);
     this.cleanup();
   }
@@ -285,18 +329,22 @@ class CallService {
    */
   async handleOffer(data) {
     try {
+      console.log('[CallService] handleOffer received:', data);
       await this.peerConnection.setRemoteDescription(data.offer);
+      console.log('[CallService] Remote description set (offer)');
       
       const answer = await this.peerConnection.createAnswer();
       await this.peerConnection.setLocalDescription(answer);
+      console.log('[CallService] Answer created and set as local description:', answer);
 
+      console.log('[CallService] Emitting webrtc:answer to targetUserId:', data.fromUserId);
       socketService.socket.emit('webrtc:answer', {
         callId: data.callId,
         answer,
         targetUserId: data.fromUserId,
       });
     } catch (error) {
-      console.error('Error handling WebRTC offer:', error);
+      console.error('[CallService] Error handling WebRTC offer:', error);
       this.endCall();
     }
   }
@@ -306,10 +354,12 @@ class CallService {
    */
   async handleAnswer(data) {
     try {
+      console.log('[CallService] handleAnswer received:', data);
       await this.peerConnection.setRemoteDescription(data.answer);
+      console.log('[CallService] Remote description set (answer)');
       this.emit('callConnected');
     } catch (error) {
-      console.error('Error handling WebRTC answer:', error);
+      console.error('[CallService] Error handling WebRTC answer:', error);
       this.endCall();
     }
   }
@@ -319,9 +369,11 @@ class CallService {
    */
   async handleIceCandidate(data) {
     try {
+      console.log('[CallService] handleIceCandidate received:', data);
       await this.peerConnection.addIceCandidate(data.candidate);
+      console.log('[CallService] ICE candidate added successfully');
     } catch (error) {
-      console.error('Error handling ICE candidate:', error);
+      console.error('[CallService] Error handling ICE candidate:', error);
     }
   }
 

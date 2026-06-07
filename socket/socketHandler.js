@@ -23,7 +23,26 @@ class SocketHandler {
    */
   initialize() {
     this.io.on('connection', (socket) => {
-      logger.info(`User connected: ${socket.id}`);
+      logger.info(`=== NEW SOCKET CONNECTION ===`);
+      logger.info(`Socket ID: ${socket.id}`);
+      logger.info(`Handshake:`, socket.handshake);
+      
+      // Log all incoming events to see what's happening
+      const originalEmit = socket.emit;
+      socket.emit = (event, ...args) => {
+        logger.debug(`[SOCKET ${socket.id}] EMITTING ${event}:`, ...args);
+        return originalEmit.apply(socket, [event, ...args]);
+      };
+      
+      // Intercept all incoming events
+      const originalOn = socket.on;
+      socket.on = (event, callback) => {
+        logger.debug(`[SOCKET ${socket.id}] REGISTERED LISTENER FOR ${event}`);
+        return originalOn.apply(socket, [event, (...args) => {
+          logger.debug(`[SOCKET ${socket.id}] RECEIVED ${event}:`, args);
+          callback(...args);
+        }]);
+      };
 
       try {
         // Handle user authentication and online status
@@ -73,26 +92,39 @@ class SocketHandler {
   handleUserOnline(socket) {
     socket.on('user-online', async (userId) => {
       try {
+        // Convert userId to string to avoid type mismatch
+        let processedUserId = userId;
+        // If userId is an object or array, maybe it's an ObjectId or something?
+        if (typeof processedUserId !== 'string') {
+          if (processedUserId && processedUserId.toString) {
+            processedUserId = processedUserId.toString();
+          } else {
+            processedUserId = String(processedUserId);
+          }
+        }
+        const stringUserId = processedUserId.trim();
+        logger.debug(`[user-online] Received userId:`, userId, 'stringUserId:', stringUserId);
+        
         // Remove any existing connection for this user
-        const existingSocketId = this.onlineUsers.get(userId);
+        const existingSocketId = this.onlineUsers.get(stringUserId);
         if (existingSocketId && existingSocketId !== socket.id) {
           this.userSockets.delete(existingSocketId);
         }
 
-        // Set new connection
-        this.onlineUsers.set(userId, socket.id);
-        this.userSockets.set(socket.id, userId);
+        // Set new connection with string userId
+        this.onlineUsers.set(stringUserId, socket.id);
+        this.userSockets.set(socket.id, stringUserId);
         
-        await userService.updateOnlineStatus(userId, true);
-        await userService.updateSocketId(userId, socket.id);
+        await userService.updateOnlineStatus(stringUserId, true);
+        await userService.updateSocketId(stringUserId, socket.id);
         
         // Deliver any queued messages
-        await this.deliverQueuedMessages(userId, socket.id);
+        await this.deliverQueuedMessages(stringUserId, socket.id);
         
         this.broadcastOnlineUsers();
         
-        socket.emit('userOnlineConfirmed', { userId, socketId: socket.id });
-        logger.info(`User ${userId} is now online with socket ${socket.id}`);
+        socket.emit('userOnlineConfirmed', { userId: stringUserId, socketId: socket.id });
+        logger.info(`User ${stringUserId} is now online with socket ${socket.id}`);
       } catch (error) {
         logger.error('User online error:', error);
         socket.emit('error', { message: 'Failed to set online status' });
@@ -105,15 +137,17 @@ class SocketHandler {
    */
   handleTyping(socket) {
     socket.on('typing', ({ senderId, receiverId }) => {
-      const conversationId = [senderId, receiverId].sort().join('-');
+      const stringSenderId = String(senderId);
+      const stringReceiverId = String(receiverId);
+      const conversationId = [stringSenderId, stringReceiverId].sort().join('-');
       
       if (!this.typingUsers.has(conversationId)) {
         this.typingUsers.set(conversationId, new Set());
       }
       
-      this.typingUsers.get(conversationId).add(senderId);
+      this.typingUsers.get(conversationId).add(stringSenderId);
       
-      const receiverSocketId = this.onlineUsers.get(receiverId);
+      const receiverSocketId = this.onlineUsers.get(stringReceiverId);
       if (receiverSocketId) {
         this.io.to(receiverSocketId).emit('typing', { senderId, receiverId });
       }
@@ -122,7 +156,7 @@ class SocketHandler {
       setTimeout(() => {
         const typingSet = this.typingUsers.get(conversationId);
         if (typingSet) {
-          typingSet.delete(senderId);
+          typingSet.delete(stringSenderId);
           if (typingSet.size === 0) {
             this.typingUsers.delete(conversationId);
           }
@@ -135,17 +169,19 @@ class SocketHandler {
     });
 
     socket.on('stopTyping', ({ senderId, receiverId }) => {
-      const conversationId = [senderId, receiverId].sort().join('-');
+      const stringSenderId = String(senderId);
+      const stringReceiverId = String(receiverId);
+      const conversationId = [stringSenderId, stringReceiverId].sort().join('-');
       const typingSet = this.typingUsers.get(conversationId);
       
       if (typingSet) {
-        typingSet.delete(senderId);
+        typingSet.delete(stringSenderId);
         if (typingSet.size === 0) {
           this.typingUsers.delete(conversationId);
         }
       }
 
-      const receiverSocketId = this.onlineUsers.get(receiverId);
+      const receiverSocketId = this.onlineUsers.get(stringReceiverId);
       if (receiverSocketId) {
         this.io.to(receiverSocketId).emit('stopTyping', { senderId, receiverId });
       }
@@ -203,7 +239,8 @@ class SocketHandler {
         };
 
         // Send to receiver if online
-        const receiverSocketId = this.onlineUsers.get(receiverId);
+        const stringReceiverId = String(receiverId);
+        const receiverSocketId = this.onlineUsers.get(stringReceiverId);
         let delivered = false;
 
         if (receiverSocketId) {
@@ -292,11 +329,12 @@ class SocketHandler {
    * Queue message for offline users
    */
   queueMessage(userId, messageData) {
-    if (!this.messageQueue.has(userId)) {
-      this.messageQueue.set(userId, []);
+    const stringUserId = String(userId);
+    if (!this.messageQueue.has(stringUserId)) {
+      this.messageQueue.set(stringUserId, []);
     }
     
-    const queue = this.messageQueue.get(userId);
+    const queue = this.messageQueue.get(stringUserId);
     queue.push(messageData);
     
     // Keep only last 50 messages in queue
@@ -309,7 +347,8 @@ class SocketHandler {
    * Deliver queued messages when user comes online
    */
   async deliverQueuedMessages(userId, socketId) {
-    const queue = this.messageQueue.get(userId);
+    const stringUserId = String(userId);
+    const queue = this.messageQueue.get(stringUserId);
     if (!queue || queue.length === 0) return;
 
     try {
@@ -320,9 +359,9 @@ class SocketHandler {
       }
 
       // Clear the queue
-      this.messageQueue.delete(userId);
+      this.messageQueue.delete(stringUserId);
       
-      logger.info(`Delivered ${queue.length} queued messages to user ${userId}`);
+      logger.info(`Delivered ${queue.length} queued messages to user ${stringUserId}`);
     } catch (error) {
       logger.error('Error delivering queued messages:', error);
     }
@@ -402,6 +441,9 @@ class SocketHandler {
     socket.on('call:initiate', async ({ receiverId, callType }) => {
       try {
         const callerId = this.userSockets.get(socket.id);
+        logger.debug(`[call:initiate] Received from ${socket.id}, callerId: ${callerId}, receiverId: ${receiverId}, callType: ${callType}`);
+        logger.debug(`[call:initiate] Online users map keys:`, Array.from(this.onlineUsers.keys()));
+        
         if (!callerId) {
           socket.emit('call:error', { error: 'User not authenticated' });
           return;
@@ -421,14 +463,39 @@ class SocketHandler {
 
         // Create call
         const call = callService.createCall(callerId, receiverId, callType);
+        logger.debug(`[call:initiate] Call created:`, call);
 
-        // Notify receiver if online
-        const receiverSocketId = this.onlineUsers.get(receiverId);
+        // Notify receiver if online - convert to string
+        const stringReceiverId = String(receiverId);
+        logger.debug(`[call:initiate] Using stringReceiverId: ${stringReceiverId}`);
+        let receiverSocketId = this.onlineUsers.get(stringReceiverId);
+        logger.debug(`[call:initiate] Receiver socket ID: ${receiverSocketId}`);
         if (receiverSocketId) {
+          let callerInfo;
+          try {
+            callerInfo = await userService.getUserById(callerId);
+            logger.debug(`[call:initiate] Got callerInfo:`, callerInfo);
+          } catch (err) {
+            logger.error(`[call:initiate] Failed to get callerInfo:`, err);
+            callerInfo = {
+              _id: callerId,
+              id: callerId,
+              username: 'Unknown User'
+            };
+          }
+          
+          logger.debug(`[call:initiate] Emitting call:incoming to ${receiverId} (${receiverSocketId}) with data:`, {
+            callId: call.callId,
+            callerId,
+            callerInfo,
+            callType: call.callType,
+            timestamp: call.startTime,
+          });
+          
           this.io.to(receiverSocketId).emit('call:incoming', {
             callId: call.callId,
             callerId,
-            callerInfo: await userService.getUserById(callerId),
+            callerInfo,
             callType: call.callType,
             timestamp: call.startTime,
           });
@@ -440,9 +507,11 @@ class SocketHandler {
         }
 
         // Confirm to caller
+        logger.debug(`[call:initiate] Emitting call:initiated to caller ${callerId} (${socket.id})`);
         socket.emit('call:initiated', {
           callId: call.callId,
-          receiverId,
+          callerId: call.callerId,
+          receiverId: call.receiverId,
           callType: call.callType,
         });
 
@@ -457,21 +526,31 @@ class SocketHandler {
     socket.on('call:accept', async ({ callId }) => {
       try {
         const userId = this.userSockets.get(socket.id);
+        logger.debug(`[call:accept] Received from ${socket.id}, userId: ${userId}, callId: ${callId}`);
+        
         const call = callService.acceptCall(callId, userId);
+        logger.debug(`[call:accept] Call accepted:`, call);
 
         // Notify caller
-        const callerSocketId = this.onlineUsers.get(call.callerId);
+        const stringCallerId = String(call.callerId);
+        const callerSocketId = this.onlineUsers.get(stringCallerId);
+        logger.debug(`[call:accept] Caller ID (string): ${stringCallerId}, Caller socket ID: ${callerSocketId}`);
         if (callerSocketId) {
+          logger.debug(`[call:accept] Emitting call:accepted to caller ${call.callerId} (${callerSocketId})`);
           this.io.to(callerSocketId).emit('call:accepted', {
             callId: call.callId,
+            callerId: call.callerId,
+            receiverId: call.receiverId,
             acceptedBy: userId,
           });
         }
 
         // Confirm to receiver
+        logger.debug(`[call:accept] Emitting call:accepted to receiver ${userId} (${socket.id})`);
         socket.emit('call:accepted', {
           callId: call.callId,
           callerId: call.callerId,
+          receiverId: call.receiverId,
         });
 
         logger.info(`Call accepted: ${callId} by ${userId}`);
@@ -485,11 +564,17 @@ class SocketHandler {
     socket.on('call:reject', async ({ callId }) => {
       try {
         const userId = this.userSockets.get(socket.id);
+        logger.debug(`[call:reject] Received from ${socket.id}, userId: ${userId}, callId: ${callId}`);
+        
         const call = callService.rejectCall(callId, userId);
+        logger.debug(`[call:reject] Call rejected:`, call);
 
         // Notify caller
-        const callerSocketId = this.onlineUsers.get(call.callerId);
+        const stringCallerId = String(call.callerId);
+        const callerSocketId = this.onlineUsers.get(stringCallerId);
+        logger.debug(`[call:reject] Caller ID (string): ${stringCallerId}, Caller socket ID: ${callerSocketId}`);
         if (callerSocketId) {
+          logger.debug(`[call:reject] Emitting call:rejected to ${call.callerId} (${callerSocketId})`);
           this.io.to(callerSocketId).emit('call:rejected', {
             callId: call.callId,
             rejectedBy: userId,
@@ -507,12 +592,17 @@ class SocketHandler {
     socket.on('call:end', async ({ callId }) => {
       try {
         const userId = this.userSockets.get(socket.id);
+        logger.debug(`[call:end] Received from ${socket.id}, userId: ${userId}, callId: ${callId}`);
+        
         const call = callService.endCall(callId, userId);
+        logger.debug(`[call:end] Call ended:`, call);
 
         // Notify all participants
         call.participants.forEach(participantId => {
           if (participantId !== userId) {
-            const participantSocketId = this.onlineUsers.get(participantId);
+            const stringParticipantId = String(participantId);
+            const participantSocketId = this.onlineUsers.get(stringParticipantId);
+            logger.debug(`[call:end] Notifying participant ${participantId} (string: ${stringParticipantId}, socket: ${participantSocketId})`);
             if (participantSocketId) {
               this.io.to(participantSocketId).emit('call:ended', {
                 callId: call.callId,
@@ -524,6 +614,7 @@ class SocketHandler {
         });
 
         // Confirm to caller
+        logger.debug(`[call:end] Emitting call:ended to ${userId} (${socket.id})`);
         socket.emit('call:ended', {
           callId: call.callId,
           duration: call.duration,
@@ -554,13 +645,22 @@ class SocketHandler {
     // Handle offer
     socket.on('webrtc:offer', ({ callId, offer, targetUserId }) => {
       try {
-        const targetSocketId = this.onlineUsers.get(targetUserId);
+        const fromUserId = this.userSockets.get(socket.id);
+        const stringTargetUserId = String(targetUserId);
+        logger.debug(`[webrtc:offer] Received from ${socket.id} (${fromUserId}), callId: ${callId}, targetUserId: ${targetUserId}, stringTargetUserId: ${stringTargetUserId}`);
+        
+        const targetSocketId = this.onlineUsers.get(stringTargetUserId);
+        logger.debug(`[webrtc:offer] Target socket ID: ${targetSocketId}`);
+        
         if (targetSocketId) {
+          logger.debug(`[webrtc:offer] Forwarding to ${stringTargetUserId} (${targetSocketId})`);
           this.io.to(targetSocketId).emit('webrtc:offer', {
             callId,
             offer,
-            fromUserId: this.userSockets.get(socket.id),
+            fromUserId,
           });
+        } else {
+          logger.warn(`[webrtc:offer] Target user ${stringTargetUserId} is not online, dropping offer`);
         }
       } catch (error) {
         logger.error('WebRTC offer error:', error);
@@ -571,13 +671,22 @@ class SocketHandler {
     // Handle answer
     socket.on('webrtc:answer', ({ callId, answer, targetUserId }) => {
       try {
-        const targetSocketId = this.onlineUsers.get(targetUserId);
+        const fromUserId = this.userSockets.get(socket.id);
+        const stringTargetUserId = String(targetUserId);
+        logger.debug(`[webrtc:answer] Received from ${socket.id} (${fromUserId}), callId: ${callId}, targetUserId: ${targetUserId}, stringTargetUserId: ${stringTargetUserId}`);
+        
+        const targetSocketId = this.onlineUsers.get(stringTargetUserId);
+        logger.debug(`[webrtc:answer] Target socket ID: ${targetSocketId}`);
+        
         if (targetSocketId) {
+          logger.debug(`[webrtc:answer] Forwarding to ${stringTargetUserId} (${targetSocketId})`);
           this.io.to(targetSocketId).emit('webrtc:answer', {
             callId,
             answer,
-            fromUserId: this.userSockets.get(socket.id),
+            fromUserId,
           });
+        } else {
+          logger.warn(`[webrtc:answer] Target user ${stringTargetUserId} is not online, dropping answer`);
         }
       } catch (error) {
         logger.error('WebRTC answer error:', error);
@@ -588,13 +697,22 @@ class SocketHandler {
     // Handle ICE candidate
     socket.on('webrtc:ice-candidate', ({ callId, candidate, targetUserId }) => {
       try {
-        const targetSocketId = this.onlineUsers.get(targetUserId);
+        const fromUserId = this.userSockets.get(socket.id);
+        const stringTargetUserId = String(targetUserId);
+        logger.debug(`[webrtc:ice-candidate] Received from ${socket.id} (${fromUserId}), callId: ${callId}, targetUserId: ${targetUserId}, stringTargetUserId: ${stringTargetUserId}`);
+        
+        const targetSocketId = this.onlineUsers.get(stringTargetUserId);
+        logger.debug(`[webrtc:ice-candidate] Target socket ID: ${targetSocketId}`);
+        
         if (targetSocketId) {
+          logger.debug(`[webrtc:ice-candidate] Forwarding to ${stringTargetUserId} (${targetSocketId})`);
           this.io.to(targetSocketId).emit('webrtc:ice-candidate', {
             callId,
             candidate,
-            fromUserId: this.userSockets.get(socket.id),
+            fromUserId,
           });
+        } else {
+          logger.warn(`[webrtc:ice-candidate] Target user ${stringTargetUserId} is not online, dropping ICE candidate`);
         }
       } catch (error) {
         logger.error('WebRTC ICE candidate error:', error);
