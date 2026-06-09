@@ -23,7 +23,7 @@ const server = http.createServer(app);
 // Initialize Socket.io
 const io = new Server(server, {
   cors: {
-    origin: config.nodeEnv === 'development' ? true : config.cors.origin,
+    origin: true, // Allow all origins in development for testing
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
     credentials: true,
   },
@@ -41,7 +41,7 @@ app.use(helmet({
 
 
 app.use(cors({
-  origin: config.nodeEnv === 'development' ? true : config.cors.origin,
+  origin: true, // Allow all origins in development for testing
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   credentials: true,
 }));
@@ -106,10 +106,11 @@ app.use(notFoundHandler);
 app.use(errorHandler);
 
 // Start server
-const HOST = config.nodeEnv === 'production' ? '0.0.0.0' : 'localhost';
+const HOST = config.nodeEnv === 'production' ? '0.0.0.0' : '0.0.0.0';
 server.listen(config.port, HOST, () => {
   logger.info(`Server running on ${HOST}:${config.port} in ${config.nodeEnv} mode`);
-  console.log(`🚀 Server running on http://${HOST}:${config.port}`);
+  console.log(`🚀 Server running on http://localhost:${config.port}`);
+  console.log(`📡 Your phone can connect at: http://192.168.0.115:${config.port}`);
   console.log(`📡 Socket.io ready for connections`);
 });
 
