@@ -7,6 +7,7 @@ const {
   googleAuth,
   getDashboard,
   getAllUser,
+  getUsers,
   fetchMessage,
   deleteMessage,
   forwardedMessage,
@@ -41,6 +42,7 @@ router.use(authenticate); // All routes below require authentication
 
 // User routes
 router.get('/dashboard', getDashboard);
+router.get('/getUsers', getUsers);
 router.get('/search', searchUsers);
 router.get('/getUpdateProfile', getUpdateProfile);
 router.get('/fetchPicture', fetchProfilePicture);

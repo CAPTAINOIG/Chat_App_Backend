@@ -146,26 +146,19 @@ class MessageService {
     );
   }
 
-  /**
-   * Delete message (soft delete) with real-time notification
-   */
+  //  * Delete message (soft delete) with real-time notification
   async deleteMessage(messageId, userId) {
     const message = await Message.findOne({ messageId }).populate('receiverId', '_id');
-
     if (!message) {
       throw new Error('Message not found');
     }
-
     // Only sender can delete
     if (message.senderId.toString() !== userId) {
       throw new Error('Unauthorized to delete this message');
     }
-
     message.isDeleted = true;
     message.deletedAt = new Date();
     await message.save();
-
-    // Return message with receiver info for socket notification
     return {
       messageId: message.messageId,
       senderId: message.senderId.toString(),
@@ -174,18 +167,13 @@ class MessageService {
     };
   }
 
-  /**
-   * Forward message to multiple recipients
-   */
+  //  * Forward message to multiple recipients
   async forwardMessage(messageId, senderId, receiverIds) {
     const originalMessage = await Message.findById(messageId);
-
     if (!originalMessage) {
       throw new Error('Message not found');
     }
-
     const forwardedMessages = [];
-
     for (const receiverId of receiverIds) {
       const newMessage = new Message({
         messageId: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -195,23 +183,18 @@ class MessageService {
         content: originalMessage.content,
         forwardedFrom: originalMessage.senderId,
       });
-
       await newMessage.save();
       forwardedMessages.push(newMessage);
     }
-
     return forwardedMessages;
   }
 
-  /**
-   * Pin message (compatible with existing data)
-   */
+  //  * Pin message (compatible with existing data)
   async pinMessage(messageId, senderId, receiverId) {
     // Prevent pinning of pin references
     if (messageId.startsWith('pin-')) {
       throw new Error('Cannot pin a pinned message reference');
     }
-
     // Find the original message
     const message = await Message.findOne({ 
       messageId,
@@ -221,22 +204,18 @@ class MessageService {
       ],
       pinnedMessage: { $exists: false }, // Ensure it's not a pin reference
     });
-    
     if (!message) {
       throw new Error('Message not found');
     }
-
     // Check if already pinned by this user (check existing format)
     const existingPin = await Message.findOne({
       senderId,
       receiverId,
       pinnedMessage: messageId,
     });
-
     if (existingPin) {
       throw new Error('Message already pinned by this user');
     }
-
     // Create a pin reference document (keeping existing format for compatibility)
     const pinnedMsg = new Message({
       messageId: `pin-${messageId}-${senderId}`, // Unique pin ID per user
@@ -247,15 +226,12 @@ class MessageService {
       pinnedMessage: messageId, // Reference to original message
       timestamp: message.timestamp, // Keep original timestamp
     });
-    
     await pinnedMsg.save();
-    
     // Populate the response
     await pinnedMsg.populate([
       { path: 'senderId', select: 'username profilePicture' },
       { path: 'receiverId', select: 'username profilePicture' }
     ]);
-    
     return pinnedMsg;
   }
 
@@ -282,7 +258,6 @@ class MessageService {
   async fetchPinnedMessages(userId, receiverId) {
     const pinnedMessages = await Message.find({
       $or: [
-        // New format
         {
           senderId: userId,
           pinnedMessage: { $exists: true },
@@ -304,9 +279,7 @@ class MessageService {
     return pinnedMessages;
   }
 
-  /**
-   * Mark messages as read
-   */
+  //  * Mark messages as read
   async markAsRead(userId, senderId) {
     await Message.updateMany(
       {
@@ -323,16 +296,13 @@ class MessageService {
     );
   }
 
-  /**
-   * Get unread message count
-   */
+  //  * Get unread message count
   async getUnreadCount(userId) {
     const count = await Message.countDocuments({
       receiverId: userId,
       isRead: false,
       isDeleted: false,
     });
-
     return count;
   }
 }

@@ -9,86 +9,61 @@ const logger = require('../utils/logger');
 class SocketHandler {
   constructor(io) {
     this.io = io;
-    this.onlineUsers = new Map(); // userId -> socketId
-    this.userSockets = new Map(); // socketId -> userId
-    this.messageQueue = new Map(); // userId -> [messages]
-    this.typingUsers = new Map(); // conversationId -> Set of userIds
+    this.onlineUsers = new Map(); 
+    this.userSockets = new Map(); 
+    this.messageQueue = new Map();
+    this.typingUsers = new Map(); 
     
     // Start call cleanup timer
     callService.startCleanupTimer();
   }
 
-  /**
-   * Initialize socket handlers
-   */
+ // Initialize socket handlers
   initialize() {
     this.io.on('connection', (socket) => {
-      logger.info(`=== NEW SOCKET CONNECTION ===`);
-      logger.info(`Socket ID: ${socket.id}`);
-      logger.info(`Handshake:`, socket.handshake);
-      
+      console.log(`New socket connection: ${socket.id}`);
       // Log all incoming events to see what's happening
       const originalEmit = socket.emit;
       socket.emit = (event, ...args) => {
-        logger.debug(`[SOCKET ${socket.id}] EMITTING ${event}:`, ...args);
+        console.log(`Socket ${socket.id} emitting event: ${event}`, args);
         return originalEmit.apply(socket, [event, ...args]);
       };
-      
       // Intercept all incoming events
       const originalOn = socket.on;
       socket.on = (event, callback) => {
-        logger.debug(`[SOCKET ${socket.id}] REGISTERED LISTENER FOR ${event}`);
         return originalOn.apply(socket, [event, (...args) => {
-          logger.debug(`[SOCKET ${socket.id}] RECEIVED ${event}:`, args);
+          console.log(`Socket ${socket.id} received event: ${event}`, args);
           callback(...args);
         }]);
       };
-
       try {
         // Handle user authentication and online status
         this.handleUserOnline(socket);
-
         // Handle typing indicators
         this.handleTyping(socket);
-
         // Handle chat messages
         this.handleChatMessage(socket);
-
         // Handle get users
         this.handleGetUsers(socket);
-
         // Handle message deletion
         this.handleMessageDeletion(socket);
-
         // Handle voice and video calls
         this.handleCalls(socket);
-
         // Handle WebRTC signaling
         this.handleWebRTCSignaling(socket);
-
         // Handle disconnect
         this.handleDisconnect(socket);
-
-        // Handle socket errors
-        socket.on('error', (error) => {
-          logger.error(`Socket error for ${socket.id}:`, error);
-        });
-
       } catch (error) {
-        logger.error('Error setting up socket handlers:', error);
+        // logger.error('Error setting up socket handlers:', error);
         socket.disconnect();
       }
     });
-
-    // Handle server-level socket errors
     this.io.on('error', (error) => {
       logger.error('Socket.io server error:', error);
     });
   }
 
-  /**
-   * Handle user coming online with improved connection management
-   */
+  //  Handle user coming online with improved connection management
   handleUserOnline(socket) {
     socket.on('user-online', async (userId) => {
       try {
@@ -103,30 +78,20 @@ class SocketHandler {
           }
         }
         const stringUserId = processedUserId.trim();
-        logger.debug(`[user-online] Received userId:`, userId, 'stringUserId:', stringUserId);
-        
         // Remove any existing connection for this user
         const existingSocketId = this.onlineUsers.get(stringUserId);
         if (existingSocketId && existingSocketId !== socket.id) {
           this.userSockets.delete(existingSocketId);
         }
-
-        // Set new connection with string userId
         this.onlineUsers.set(stringUserId, socket.id);
         this.userSockets.set(socket.id, stringUserId);
-        
         await userService.updateOnlineStatus(stringUserId, true);
         await userService.updateSocketId(stringUserId, socket.id);
-        
-        // Deliver any queued messages
         await this.deliverQueuedMessages(stringUserId, socket.id);
         
         this.broadcastOnlineUsers();
-        
         socket.emit('userOnlineConfirmed', { userId: stringUserId, socketId: socket.id });
-        logger.info(`User ${stringUserId} is now online with socket ${socket.id}`);
       } catch (error) {
-        logger.error('User online error:', error);
         socket.emit('error', { message: 'Failed to set online status' });
       }
     });
@@ -373,38 +338,35 @@ class SocketHandler {
   handleGetUsers(socket) {
     socket.on('getUsers', async ({ token }) => {
       try {
+        console.log('socketHandler handleGetUsers event received with token:', token ? 'token provided' : 'token missing');
         const user = await authService.verifyToken(token);
-        
+        console.log('socketHandler verified user:', user._id);
         // Update socket ID
         await userService.updateSocketId(user._id, socket.id);
         await userService.updateOnlineStatus(user._id, true);
-        
         // Get all users
         const result = await userService.getAllUsers(1, 100, user._id);
-        
+        console.log('socketHandler getAllUsers result:', JSON.stringify(result, null, 2));
         socket.emit('getUsers', {
           success: true,
           message: 'Users retrieved',
           users: result.users,
         });
       } catch (error) {
-        logger.error('Get users error:', error);
+        console.error('socketHandler handleGetUsers error:', error);
         socket.emit('getUsers', {
           success: false,
-          message: 'Error occurred',
+          message: 'Error occurred: ' + error.message,
         });
       }
     });
   }
 
-  /**
-   * Handle message deletion via socket
-   */
+  //  * Handle message deletion via socket
   handleMessageDeletion(socket) {
     socket.on('deleteMessage', async ({ messageId, userId }) => {
       try {
         const deletedMessage = await messageService.deleteMessage(messageId, userId);
-        
         // Notify receiver if online
         const receiverSocketId = this.onlineUsers.get(deletedMessage.receiverId);
         if (receiverSocketId) {

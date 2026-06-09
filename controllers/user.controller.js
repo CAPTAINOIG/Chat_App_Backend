@@ -31,11 +31,10 @@ const getDashboard = asyncHandler(async (req, res) => {
 const getAllUser = (socket) => {
   socket.on('getUsers', async ({ token }) => {
     try {
+      console.log('getUsers event received with token:', token ? 'token provided' : 'token missing');
       const user = await authService.verifyToken(token);
-      // Update socket ID
       await userService.updateSocketId(user._id, socket.id);
       await userService.updateOnlineStatus(user._id, true);
-      // Get all users
       const result = await userService.getAllUsers(1, 100, user._id);
       socket.emit('getUsers', {
         success: true,
@@ -43,10 +42,9 @@ const getAllUser = (socket) => {
         users: result.users,
       });
     } catch (error) {
-      logger.error('Get users error:', error);
       socket.emit('getUsers', {
         success: false,
-        message: 'Error occurred',
+        message: 'Error occurred: ' + error.message,
       });
     }
   });
@@ -165,6 +163,15 @@ const searchUsers = asyncHandler(async (req, res) => {
 });
 
 /**
+ * Get all users (HTTP endpoint)
+ */
+const getUsers = asyncHandler(async (req, res) => {
+  const userId = req.user._id;
+  const result = await userService.getAllUsers(1, 100, userId);
+  ResponseHandler.success(res, { users: result.users }, 'Users retrieved successfully');
+});
+
+/**
  * Get unread message count
  */
 const getUnreadCount = asyncHandler(async (req, res) => {
@@ -198,6 +205,7 @@ module.exports = {
   googleAuth,
   getDashboard,
   getAllUser,
+  getUsers,
   fetchMessage,
   deleteMessage,
   forwardedMessage,
