@@ -23,7 +23,7 @@ const server = http.createServer(app);
 // Initialize Socket.io
 const io = new Server(server, {
   cors: {
-    origin: config.nodeEnv === 'development' ? true : ['http://localhost:5173', 'https://captain-chat-app.netlify.app'],
+    origin: config.nodeEnv === 'development' ? true : config.cors.origin,
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
     credentials: true,
   },
@@ -41,7 +41,7 @@ app.use(helmet({
 
 
 app.use(cors({
-  origin: config.nodeEnv === 'development' ? true : ['http://localhost:5173', 'https://captain-chat-app.netlify.app'],
+  origin: config.nodeEnv === 'development' ? true : config.cors.origin,
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
   credentials: true,
 }));

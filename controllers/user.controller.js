@@ -31,7 +31,6 @@ const getDashboard = asyncHandler(async (req, res) => {
 const getAllUser = (socket) => {
   socket.on('getUsers', async ({ token }) => {
     try {
-      console.log('getUsers event received with token:', token ? 'token provided' : 'token missing');
       const user = await authService.verifyToken(token);
       await userService.updateSocketId(user._id, socket.id);
       await userService.updateOnlineStatus(user._id, true);
