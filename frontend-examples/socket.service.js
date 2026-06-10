@@ -1,11 +1,3 @@
-/**
- * Enhanced Socket.io Service for Frontend
- * Copy this file to your frontend project: src/services/socket.service.js
- * 
- * Install socket.io-client first:
- * npm install socket.io-client
- */
-
 import io from 'socket.io-client';
 import apiService from './api.service';
 
@@ -53,7 +45,6 @@ class SocketService {
       });
 
       this.socket.on('connect_error', (error) => {
-        console.error('Socket connection error:', error);
         if (this.reconnectAttempts >= this.maxReconnectAttempts) {
           reject(error);
         }
@@ -65,7 +56,6 @@ class SocketService {
 
   setupDefaultListeners() {
     this.socket.on('connect', () => {
-      console.log('✅ Socket connected:', this.socket.id);
       this.connectionPromise = null;
       
       // Emit user online with retry mechanism
@@ -78,7 +68,6 @@ class SocketService {
     });
 
     this.socket.on('disconnect', (reason) => {
-      console.log('❌ Socket disconnected:', reason);
       this.connectionPromise = null;
     });
 

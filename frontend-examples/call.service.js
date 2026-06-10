@@ -1,10 +1,4 @@
-/**
- * WebRTC Call Service for Frontend
- * Copy this file to your frontend project: src/services/call.service.js
- */
-
 import socketService from './socket.service';
-
 class CallService {
   constructor() {
     this.localStream = null;
@@ -12,7 +6,7 @@ class CallService {
     this.peerConnection = null;
     this.currentCall = null;
     this.isCallActive = false;
-    this.callType = null; // 'voice' or 'video'
+    this.callType = null; 
     
     // WebRTC configuration
     this.rtcConfig = {
@@ -27,9 +21,6 @@ class CallService {
     this.setupSocketListeners();
   }
 
-  /**
-   * Setup socket event listeners
-   */
   setupSocketListeners() {
     // Call events
     socketService.on('call:incoming', this.handleIncomingCall.bind(this));

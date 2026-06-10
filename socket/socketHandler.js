@@ -21,11 +21,9 @@ class SocketHandler {
  // Initialize socket handlers
   initialize() {
     this.io.on('connection', (socket) => {
-      console.log(`New socket connection: ${socket.id}`);
       // Log all incoming events to see what's happening
       const originalEmit = socket.emit;
       socket.emit = (event, ...args) => {
-        console.log(`Socket ${socket.id} emitting event: ${event}`, args);
         return originalEmit.apply(socket, [event, ...args]);
       };
       // Intercept all incoming events
@@ -234,8 +232,6 @@ class SocketHandler {
           message: 'Message sent successfully',
           messageData,
         });
-
-        logger.info(`Message sent from ${senderId} to ${receiverId} (delivered: ${delivered})`);
       } catch (error) {
         logger.error('Chat message error:', error);
         socket.emit('messageError', {
@@ -338,22 +334,16 @@ class SocketHandler {
   handleGetUsers(socket) {
     socket.on('getUsers', async ({ token }) => {
       try {
-        console.log('socketHandler handleGetUsers event received with token:', token ? 'token provided' : 'token missing');
         const user = await authService.verifyToken(token);
-        console.log('socketHandler verified user:', user._id);
-        // Update socket ID
         await userService.updateSocketId(user._id, socket.id);
         await userService.updateOnlineStatus(user._id, true);
-        // Get all users
         const result = await userService.getAllUsers(1, 100, user._id);
-        console.log('socketHandler getAllUsers result:', JSON.stringify(result, null, 2));
         socket.emit('getUsers', {
           success: true,
           message: 'Users retrieved',
           users: result.users,
         });
       } catch (error) {
-        console.error('socketHandler handleGetUsers error:', error);
         socket.emit('getUsers', {
           success: false,
           message: 'Error occurred: ' + error.message,
@@ -382,10 +372,7 @@ class SocketHandler {
           success: true,
           messageId: deletedMessage.messageId
         });
-
-        logger.info(`Message ${messageId} deleted by user ${userId}`);
       } catch (error) {
-        logger.error('Delete message error:', error);
         socket.emit('messageDeleteError', {
           success: false,
           messageId,
@@ -403,14 +390,10 @@ class SocketHandler {
     socket.on('call:initiate', async ({ receiverId, callType }) => {
       try {
         const callerId = this.userSockets.get(socket.id);
-        logger.debug(`[call:initiate] Received from ${socket.id}, callerId: ${callerId}, receiverId: ${receiverId}, callType: ${callType}`);
-        logger.debug(`[call:initiate] Online users map keys:`, Array.from(this.onlineUsers.keys()));
-        
         if (!callerId) {
           socket.emit('call:error', { error: 'User not authenticated' });
           return;
         }
-
         // Check if caller is already in a call
         if (callService.isUserInCall(callerId)) {
           socket.emit('call:error', { error: 'You are already in a call' });
@@ -425,13 +408,9 @@ class SocketHandler {
 
         // Create call
         const call = callService.createCall(callerId, receiverId, callType);
-        logger.debug(`[call:initiate] Call created:`, call);
-
         // Notify receiver if online - convert to string
         const stringReceiverId = String(receiverId);
-        logger.debug(`[call:initiate] Using stringReceiverId: ${stringReceiverId}`);
         let receiverSocketId = this.onlineUsers.get(stringReceiverId);
-        logger.debug(`[call:initiate] Receiver socket ID: ${receiverSocketId}`);
         if (receiverSocketId) {
           let callerInfo;
           try {
