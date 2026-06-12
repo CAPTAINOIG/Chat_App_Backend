@@ -20,10 +20,30 @@ const messageSchema = new mongoose.Schema({
     type: [mongoose.Schema.Types.ObjectId],
     required: true,
   },
+  type: {
+    type: String,
+    enum: ['text', 'voice'],
+    default: 'text',
+    required: true,
+  },
   content: {
     type: String,
-    required: true,
+    required: function() {
+      return this.type === 'text';
+    },
     maxlength: 5000,
+  },
+  audioUrl: {
+    type: String,
+    required: function() {
+      return this.type === 'voice';
+    },
+  },
+  duration: {
+    type: Number, // in seconds
+    required: function() {
+      return this.type === 'voice';
+    },
   },
   replyTo: {
     type: mongoose.Schema.Types.ObjectId,

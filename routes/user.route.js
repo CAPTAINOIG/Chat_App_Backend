@@ -22,6 +22,7 @@ const {
   getUnreadCount,
   markMessagesAsRead,
   getCallHistory,
+  uploadVoiceNote,
 } = require('../controllers/user.controller');
 
 const { authenticate } = require('../middleware/auth');
@@ -58,6 +59,9 @@ router.delete('/deleteMessage/:messageId', deleteMessage);
 
 // Call routes
 router.get('/callHistory', getCallHistory);
+
+// Voice note routes
+router.post('/uploadVoiceNote', uploadVoiceNote);
 
 // Pin message routes
 router.get('/getPinMessage', fetchPinMessage);

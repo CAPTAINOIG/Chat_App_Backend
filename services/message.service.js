@@ -12,7 +12,7 @@ class MessageService {
    * Create and save a new message with optimized performance
    */
   async createMessage(messageData) {
-    const { messageId, senderId, receiverId, content, replyTo } = messageData;
+    const { messageId, senderId, receiverId, content, replyTo, type = 'text', audioUrl, duration } = messageData;
     
     // Convert string IDs to ObjectIds if needed
     const mongoose = require('mongoose');
@@ -23,7 +23,10 @@ class MessageService {
       messageId: messageId || `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       senderId: senderObjectId,
       receiverId: receiverObjectId,
-      content,
+      type,
+      content: type === 'text' ? content : undefined,
+      audioUrl: type === 'voice' ? audioUrl : undefined,
+      duration: type === 'voice' ? duration : undefined,
       replyTo: replyTo ? new mongoose.Types.ObjectId(replyTo) : null,
       users: [senderObjectId, receiverObjectId],
       deliveryStatus: 'sent', // Track delivery status
@@ -180,7 +183,10 @@ class MessageService {
         senderId,
         receiverId,
         users: [senderId, receiverId],
+        type: originalMessage.type || 'text',
         content: originalMessage.content,
+        audioUrl: originalMessage.audioUrl,
+        duration: originalMessage.duration,
         forwardedFrom: originalMessage.senderId,
       });
       await newMessage.save();

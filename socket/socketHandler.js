@@ -155,14 +155,32 @@ class SocketHandler {
    * Handle chat messages with improved delivery system
    */
   handleChatMessage(socket) {
-    socket.on('chat message', async ({ messageId, senderId, receiverId, content, replyTo }) => {
+    socket.on('chat message', async ({ messageId, senderId, receiverId, content, replyTo, type, audioUrl, duration }) => {
       try {
         // Validate input
-        if (!senderId || !receiverId || !content?.trim()) {
+        if (!senderId || !receiverId) {
           socket.emit('messageError', {
             messageId,
             success: false,
             error: 'Missing required fields',
+          });
+          return;
+        }
+        
+        if (type === 'text' && !content?.trim()) {
+          socket.emit('messageError', {
+            messageId,
+            success: false,
+            error: 'Text content required for text messages',
+          });
+          return;
+        }
+        
+        if (type === 'voice' && !audioUrl) {
+          socket.emit('messageError', {
+            messageId,
+            success: false,
+            error: 'Audio URL required for voice messages',
           });
           return;
         }
@@ -185,8 +203,11 @@ class SocketHandler {
           messageId: messageId || `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
           senderId,
           receiverId,
-          content: content.trim(),
+          content: type === 'text' ? content.trim() : undefined,
           replyTo,
+          type: type || 'text',
+          audioUrl: type === 'voice' ? audioUrl : undefined,
+          duration: type === 'voice' ? duration : undefined,
         });
 
         // Prepare message data for transmission
@@ -197,6 +218,9 @@ class SocketHandler {
           receiverId: savedMessage.receiverId,
           content: savedMessage.content,
           replyTo: savedMessage.replyTo,
+          type: savedMessage.type,
+          audioUrl: savedMessage.audioUrl,
+          duration: savedMessage.duration,
           timestamp: savedMessage.timestamp,
           deliveryStatus: 'sent',
         };

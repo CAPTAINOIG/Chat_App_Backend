@@ -5,6 +5,15 @@ const userService = require('../services/user.service');
 const messageService = require('../services/message.service');
 const callService = require('../services/call.service');
 const logger = require('../utils/logger');
+const cloudinary = require('cloudinary').v2;
+const config = require('../config');
+
+// Configure Cloudinary
+cloudinary.config({
+  cloud_name: config.cloudinary.cloudName,
+  api_key: config.cloudinary.apiKey,
+  api_secret: config.cloudinary.apiSecret,
+});
 
 const registerUser = asyncHandler(async (req, res) => {
   const result = await authService.register(req.body);
@@ -94,45 +103,30 @@ const handlePinMessage = asyncHandler(async (req, res) => {
   ResponseHandler.success(res, { pinnedMessage: result }, 'Message pinned successfully');
 });
 
-/**
- * Unpin message
- */
 const handleUnpinMessage = asyncHandler(async (req, res) => {
   const { messageId, senderId, receiverId } = req.body;
   await messageService.unpinMessage(messageId, senderId, receiverId);
   ResponseHandler.success(res, null, 'Message unpinned successfully');
 });
 
-/**
- * Fetch pinned messages
- */
 const fetchPinMessage = asyncHandler(async (req, res) => {
   const { userId, receiverId } = req.query;
   const result = await messageService.fetchPinnedMessages(userId, receiverId);
   ResponseHandler.success(res, { pinnedMessages: result }, 'Pinned messages retrieved');
 });
 
-/**
- * Update profile picture
- */
 const profilePicture = asyncHandler(async (req, res) => {
   const { userId, base64 } = req.body;
   const user = await userService.updateProfilePicture(userId, base64);
   ResponseHandler.success(res, { user }, 'Profile picture updated successfully');
 });
 
-/**
- * Fetch profile picture
- */
 const fetchProfilePicture = asyncHandler(async (req, res) => {
   const { userId } = req.query;
   const user = await userService.getUserById(userId);
   ResponseHandler.success(res, { url: user.profilePicture }, 'Profile picture retrieved');
 });
 
-/**
- * Update user profile
- */
 const updateProfile = asyncHandler(async (req, res) => {
   const { userId } = req.params;
   const updates = req.body;
@@ -140,18 +134,12 @@ const updateProfile = asyncHandler(async (req, res) => {
   ResponseHandler.success(res, { user }, 'Profile updated successfully');
 });
 
-/**
- * Get user profile
- */
 const getUpdateProfile = asyncHandler(async (req, res) => {
   const { userId } = req.query;
   const user = await userService.getUserById(userId);
   ResponseHandler.success(res, { user }, 'User profile retrieved');
 });
 
-/**
- * Search users
- */
 const searchUsers = asyncHandler(async (req, res) => {
   const { q, page = 1, limit = 20 } = req.query;
   if (!q) {
@@ -161,27 +149,18 @@ const searchUsers = asyncHandler(async (req, res) => {
   ResponseHandler.success(res, result, 'Search results retrieved');
 });
 
-/**
- * Get all users (HTTP endpoint)
- */
 const getUsers = asyncHandler(async (req, res) => {
   const userId = req.user._id;
   const result = await userService.getAllUsers(1, 100, userId);
   ResponseHandler.success(res, { users: result.users }, 'Users retrieved successfully');
 });
 
-/**
- * Get unread message count
- */
 const getUnreadCount = asyncHandler(async (req, res) => {
   const userId = req.user._id.toString();
   const count = await messageService.getUnreadCount(userId);
   ResponseHandler.success(res, { count }, 'Unread count retrieved');
 });
 
-/**
- * Mark messages as read
- */
 const markMessagesAsRead = asyncHandler(async (req, res) => {
   const { senderId } = req.body;
   const userId = req.user._id.toString();
@@ -189,13 +168,24 @@ const markMessagesAsRead = asyncHandler(async (req, res) => {
   ResponseHandler.success(res, null, 'Messages marked as read');
 });
 
-/**
- * Get call history
- */
 const getCallHistory = asyncHandler(async (req, res) => {
   const userId = req.user._id.toString();
   const callHistory = callService.getCallHistory(userId);
   ResponseHandler.success(res, { callHistory }, 'Call history retrieved');
+});
+
+const uploadVoiceNote = asyncHandler(async (req, res) => {
+  const { base64Audio, duration } = req.body;
+  // Upload to Cloudinary
+  const uploadResult = await cloudinary.uploader.upload(base64Audio, {
+    resource_type: 'video', // Cloudinary uses 'video' for audio files too
+    folder: 'chat-app/voice-notes',
+    format: 'mp3',
+  });
+  ResponseHandler.success(res, {
+    audioUrl: uploadResult.secure_url,
+    duration: duration || 0,
+  }, 'Voice note uploaded successfully');
 });
 
 module.exports = {
@@ -219,4 +209,5 @@ module.exports = {
   getUnreadCount,
   markMessagesAsRead,
   getCallHistory,
+  uploadVoiceNote,
 };

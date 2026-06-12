@@ -11,7 +11,6 @@ cloudinary.config({
 });
 
 class UserService {
-  //  * Get all users with pagination
   async getAllUsers(page = 1, limit = 50, excludeUserId = null) {
     const skip = (page - 1) * limit;
     const query = excludeUserId ? { _id: { $ne: excludeUserId } } : {};
@@ -32,9 +31,6 @@ class UserService {
     };
   }
 
-  /**
-   * Get user by ID
-   */
   async getUserById(userId) {
     const user = await User.findById(userId).select('-password').lean();
     if (!user) {
@@ -43,7 +39,6 @@ class UserService {
     return user;
   }
 
-  //  * Search users by username or email
   async searchUsers(query, page = 1, limit = 20) {
     const skip = (page - 1) * limit;
     const users = await User.find({
