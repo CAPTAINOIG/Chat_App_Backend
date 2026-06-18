@@ -65,6 +65,10 @@ const userSchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
+  showOnline: {
+    type: Boolean,
+    default: false,
+  },
   pinnedMessages: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Message',

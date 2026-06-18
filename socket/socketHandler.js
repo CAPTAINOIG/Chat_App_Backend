@@ -21,6 +21,13 @@ class SocketHandler {
  // Initialize socket handlers
   initialize() {
     this.io.on('connection', (socket) => {
+    socket.on("update-show-online", async (data) => {
+      const { userId, showOnline } = data;
+    try {
+      await User.findByIdAndUpdate(userId, {showOnline});
+    } catch (error) {
+    }
+  });
       // Log all incoming events to see what's happening
       const originalEmit = socket.emit;
       socket.emit = (event, ...args) => {
@@ -94,6 +101,8 @@ class SocketHandler {
       }
     });
   }
+
+  
 
   /**
    * Handle typing indicators with improved management

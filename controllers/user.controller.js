@@ -182,10 +182,7 @@ const uploadVoiceNote = asyncHandler(async (req, res) => {
     folder: 'chat-app/voice-notes',
     format: 'mp3',
   });
-  ResponseHandler.success(res, {
-    audioUrl: uploadResult.secure_url,
-    duration: duration || 0,
-  }, 'Voice note uploaded successfully');
+  ResponseHandler.success(res, {audioUrl: uploadResult.secure_url, duration: duration || 0,}, 'Voice note uploaded successfully');
 });
 
 module.exports = {
