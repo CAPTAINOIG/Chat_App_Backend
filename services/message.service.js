@@ -8,9 +8,6 @@ class MessageService {
     this.deliveryCallbacks = new Map(); // For message acknowledgments
   }
 
-  /**
-   * Create and save a new message with optimized performance
-   */
   async createMessage(messageData) {
     const { messageId, senderId, receiverId, content, replyTo, type = 'text', audioUrl, duration } = messageData;
     
@@ -44,12 +41,8 @@ class MessageService {
     return savedMessage;
   }
 
-  /**
-   * Fetch messages between two users with pagination (optimized)
-   */
   async fetchMessages(userId, receiverId, page = 1, limit = 50) {
     const skip = (page - 1) * limit;
-
     // Convert string IDs to ObjectIds if needed
     const mongoose = require('mongoose');
     const userObjectId = typeof userId === 'string' ? new mongoose.Types.ObjectId(userId) : userId;
@@ -136,9 +129,6 @@ class MessageService {
     };
   }
 
-  /**
-   * Update message delivery status
-   */
   async updateDeliveryStatus(messageId, status) {
     await Message.findOneAndUpdate(
       { messageId },

@@ -8,9 +8,6 @@ const logger = require('../utils/logger');
 const googleClient = config.google.clientId ? new OAuth2Client(config.google.clientId) : null;
 
 class AuthService {
-  /**
-   * Generate JWT token
-   */
   generateToken(user) {
     return jwt.sign(
       { 
@@ -22,9 +19,6 @@ class AuthService {
     );
   }
 
-  /**
-   * Register new user
-   */
   async register(userData) {
     const { username, email, password, number } = userData;
     const existingUser = await User.findOne({ email });
@@ -33,11 +27,9 @@ class AuthService {
     }
     const user = new User({ username, email, password, number });
     await user.save();
-    // Send welcome email (non-blocking)
     emailService.sendWelcomeEmail(email, username).catch(err => {
       logger.error('Welcome email failed:', err);
     });
-
     // Generate token
     const token = this.generateToken(user);
     return {
@@ -46,12 +38,8 @@ class AuthService {
     };
   }
 
-  /**
-   * Login user
-   */
   async login(email, password) {
     try {
-      // Find user
       const user = await User.findOne({ email });
       if (!user) {
         throw new Error('Invalid email or password');
@@ -71,14 +59,10 @@ class AuthService {
         user: user.toPublicJSON(),
       };
     } catch (error) {
-      logger.error('Login error:', error);
       throw error;
     }
   }
 
-  /**
-   * Google OAuth authentication
-   */
   async googleAuth(googleToken) {
     try {
       // Check if Google auth is configured
@@ -140,9 +124,6 @@ class AuthService {
     }
   }
 
-  /**
-   * Verify JWT token
-   */
   async verifyToken(token) {
     try {
       const decoded = jwt.verify(token, config.jwt.secret);
@@ -157,6 +138,50 @@ class AuthService {
       throw new Error('Invalid token');
     }
   }
+
+  async forgotPassword(email, resetToken, expirationDate) {
+    try {
+      const user = await User.findOne({ email });
+      if (!user) {
+        throw new Error('User not found');
+      }
+      user.otp = resetToken;
+      user.otpExpiration = expirationDate;
+      await user.save();
+      emailService.sendPasswordResetEmail(email, resetToken).catch(err => {
+        logger.error('Password Reset Failed', err)
+      })
+      return {
+        token:resetToken,
+        user: user.toPublicJSON(),
+        expirationDate,
+      };
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  async resetPassword (otp, password, newPassword) {
+    try {
+      const user = await User.findOne({ otp });
+      if (!user) {
+        throw new Error('Invalid OTP');
+      }
+      const isValid = await user.validatePassword(password);
+      if (!isValid) {
+        throw new Error('Invalid OTP or password');
+      }
+      user.password = await bcrypt.hash(newPassword, saltRounds);
+      await user.save();
+      return {
+        message: 'Password reset successful',
+      };
+    } catch (error) {
+      throw error;
+    }
+  }
 }
+
+
 
 module.exports = new AuthService();

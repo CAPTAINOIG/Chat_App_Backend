@@ -13,11 +13,9 @@ class SocketHandler {
     this.userSockets = new Map(); 
     this.messageQueue = new Map();
     this.typingUsers = new Map(); 
-    
     // Start call cleanup timer
     callService.startCleanupTimer();
   }
-
  // Initialize socket handlers
   initialize() {
     this.io.on('connection', (socket) => {
@@ -59,7 +57,6 @@ class SocketHandler {
         // Handle disconnect
         this.handleDisconnect(socket);
       } catch (error) {
-        // logger.error('Error setting up socket handlers:', error);
         socket.disconnect();
       }
     });
@@ -102,11 +99,6 @@ class SocketHandler {
     });
   }
 
-  
-
-  /**
-   * Handle typing indicators with improved management
-   */
   handleTyping(socket) {
     socket.on('typing', ({ senderId, receiverId }) => {
       const stringSenderId = String(senderId);
@@ -160,13 +152,9 @@ class SocketHandler {
     });
   }
 
-  /**
-   * Handle chat messages with improved delivery system
-   */
   handleChatMessage(socket) {
     socket.on('chat message', async ({ messageId, senderId, receiverId, content, replyTo, type, audioUrl, duration }) => {
       try {
-        // Validate input
         if (!senderId || !receiverId) {
           socket.emit('messageError', {
             messageId,
@@ -193,7 +181,6 @@ class SocketHandler {
           });
           return;
         }
-
         // Rate limiting check (simple implementation)
         const now = Date.now();
         const userLastMessage = socket.lastMessageTime || 0;
@@ -266,7 +253,6 @@ class SocketHandler {
           messageData,
         });
       } catch (error) {
-        logger.error('Chat message error:', error);
         socket.emit('messageError', {
           messageId,
           success: false,
@@ -319,9 +305,6 @@ class SocketHandler {
     });
   }
 
-  /**
-   * Queue message for offline users
-   */
   queueMessage(userId, messageData) {
     const stringUserId = String(userId);
     if (!this.messageQueue.has(stringUserId)) {
@@ -361,9 +344,6 @@ class SocketHandler {
     }
   }
 
-  /**
-   * Handle get users request
-   */
   handleGetUsers(socket) {
     socket.on('getUsers', async ({ token }) => {
       try {

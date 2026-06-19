@@ -4,6 +4,8 @@ const router = express.Router();
 const {
   registerUser,
   userLogin,
+  forgotPassword,
+  resetPassword,
   googleAuth,
   getDashboard,
   getAllUser,
@@ -32,6 +34,8 @@ const { userValidators, messageValidators, validate } = require('../validators/u
 // Public routes (no authentication required)
 router.post('/signup', validate(userValidators.register), registerUser);
 router.post('/signin', validate(userValidators.login), userLogin);
+router.post('/forgot-password', validate(userValidators.forgotPassword), forgotPassword);
+router.post('/reset-password', validate(userValidators.resetPassword), resetPassword);
 
 // Google auth (only if configured)
 if (process.env.GOOGLE_CLIENT_ID) {

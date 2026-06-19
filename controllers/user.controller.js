@@ -15,6 +15,10 @@ cloudinary.config({
   api_secret: config.cloudinary.apiSecret,
 });
 
+function generating() {
+  return Math.floor(1000 + Math.random() * 9000)
+}
+
 const registerUser = asyncHandler(async (req, res) => {
   const result = await authService.register(req.body);
   ResponseHandler.created(res, result, 'User registered successfully');
@@ -25,6 +29,21 @@ const userLogin = asyncHandler(async (req, res) => {
   const result = await authService.login(email, password);
   ResponseHandler.success(res, result, 'Login successful');
 });
+
+const forgotPassword = asyncHandler(async (req, res) => {
+  const {email} = req.body;
+  const resetToken = generating();
+  const expirationDate = new Date();
+  expirationDate.setMinutes(expirationDate.getMinutes() + 15); 
+  const result = await authService.forgotPassword(email, resetToken, expirationDate)
+  ResponseHandler.success(res, result, 'email sent successfully')
+})
+
+const resetPassword = asyncHandler(async (req, res) => {
+  const { otp, password, newPassword } = req.body;
+  const result = await authService.resetPassword(otp, password, newPassword);
+  ResponseHandler.success(res, result, 'Password reset successful'); 
+})
 
 const googleAuth = asyncHandler(async (req, res) => {
   const { googleToken } = req.body;
@@ -188,6 +207,8 @@ const uploadVoiceNote = asyncHandler(async (req, res) => {
 module.exports = {
   registerUser,
   userLogin,
+  forgotPassword,
+  resetPassword,
   googleAuth,
   getDashboard,
   getAllUser,

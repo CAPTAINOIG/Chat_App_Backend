@@ -1,8 +1,3 @@
-/**
- * Authentication Service for Frontend
- * Copy this file to your frontend project: src/services/auth.service.js
- */
-
 import apiService from './api.service';
 
 const ENDPOINTS = {

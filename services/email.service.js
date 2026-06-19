@@ -5,10 +5,15 @@ const logger = require('../utils/logger');
 class EmailService {
   constructor() {
     this.transporter = nodemailer.createTransport({
-      service: config.email.service,
+      host: 'smtp.gmail.com',
+      port: 587,
+      secure: false,
       auth: {
         user: config.email.user,
         pass: config.email.password,
+      },
+      tls: {
+        rejectUnauthorized: false,
       },
     });
   }
@@ -45,10 +50,11 @@ class EmailService {
   }
 
   async sendPasswordResetEmail(email, resetToken) {
-    const mailOptions = {
-      from: config.email.user,
-      to: email,
-      subject: "Password Reset Request",
+      const mailOptions = {
+        from: config.email.user,
+        to: email,
+        subject: "Your OTP Code",
+            text: `Your 4-digit PIN code is: ${resetToken}`,
       html: `
         <div style="padding: 20px;">
           <h2>Password Reset Request</h2>
@@ -61,7 +67,7 @@ class EmailService {
     };
 
     try {
-      await this.transporter.sendMail(mailOptions);
+     const res = await this.transporter.sendMail(mailOptions);
       logger.info(`Password reset email sent to ${email}`);
     } catch (error) {
       logger.error(`Failed to send password reset email to ${email}:`, error);

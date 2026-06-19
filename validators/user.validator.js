@@ -1,6 +1,6 @@
 const Joi = require('joi');
 
-const userValidators = {
+const  userValidators = {
   register: Joi.object({
     username: Joi.string().min(3).max(30).required().trim(),
     email: Joi.string().email().required().lowercase().trim(),
@@ -11,6 +11,16 @@ const userValidators = {
   login: Joi.object({
     email: Joi.string().email().required().lowercase().trim(),
     password: Joi.string().required(),
+  }),
+
+  forgotPassword: Joi.object({
+    email: Joi.string().email().required().lowercase().trim(),
+  }),
+
+  resetPassword: Joi.object({
+    otp: Joi.string().required(),
+    password: Joi.string().required(),
+    newPassword: Joi.string().required(),
   }),
 
   googleAuth: Joi.object({
